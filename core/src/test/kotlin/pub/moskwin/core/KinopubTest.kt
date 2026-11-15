@@ -141,4 +141,29 @@ class KinopubTest {
         assertEquals(1, bad.requestCount)
         assertEquals(0, other.requestCount)
     }
+
+    @Test fun `server switch skips a host without the settings path and keeps the main host`() = runTest {
+        val main = server()
+        val spare = server()
+        main.enqueue(json("<html>not found</html>", 404))
+        spare.enqueue(json("""{"status":200}"""))
+        val kp = client(InMemoryTokenStore(Tokens("a", "r", 9_999)), main.base(), spare.base())
+        kp.setServer(deviceId = 7, serverId = 3)
+        val sent = spare.takeRequest()
+        assertEquals("/v1/device/7/settings", sent.path)
+        assertEquals("serverLocation=3", sent.body.readUtf8())
+        assertEquals(0, kp.hosts.currentIndex)
+    }
+
+    @Test fun `home rows decode from typed endpoints`() = runTest {
+        val s = server()
+        s.enqueue(json("""{"status":200,"device":{"id":5,"settings":{"serverLocation":{"type":"list","value":[
+            {"id":1,"label":"Нидерланды","selected":1},{"id":3,"label":"Россия","selected":0}]}}}}"""))
+        s.enqueue(json("""{"status":200,"items":[{"id":1,"title":"посмотрю","count":83,"posters":null}]}"""))
+        s.enqueue(json("""{"status":200,"item":{"id":9,"seasons":[{"number":1,"episodes":[{"number":1,"duration":437,"time":437,"status":1}]}]}}"""))
+        val kp = client(InMemoryTokenStore(Tokens("a", "r", 9_999)), s.base())
+        assertEquals(Device(5, listOf(ServerOption(1, "Нидерланды", 1), ServerOption(3, "Россия", 0))), kp.device())
+        assertEquals(listOf(BookmarkFolder(1, "посмотрю", 83)), kp.bookmarkFolders())
+        assertEquals(1, kp.watching(9).seasons.single().episodes.single().status)
+    }
 }

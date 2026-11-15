@@ -50,6 +50,11 @@ internal class Transport(
         form: Map<String, String?>? = null,
         bearer: String? = null,
         failover: Boolean = true,
+        /**
+         * Ответы, при которых тоже пробуем следующий адрес: путь, который один из
+         * адресов не обслуживает. Рабочим такой адрес после успеха не запоминается.
+         */
+        skipHostOn: Set<Int> = emptySet(),
     ): RawResponse {
         val candidates = hosts.candidates().let { if (failover) it else it.take(1) }
         var lastError: Throwable? = null
@@ -68,11 +73,11 @@ internal class Transport(
             }.build()
             try {
                 val response = executeWithRateLimit(request, retry = failover)
-                if (response.status in GATEWAY_ERRORS) {
+                if (response.status in GATEWAY_ERRORS || response.status in skipHostOn) {
                     lastError = response.toException()
                     continue
                 }
-                hosts.markWorking(base.index)
+                if (skipHostOn.isEmpty()) hosts.markWorking(base.index)
                 return response
             } catch (e: IOException) {
                 lastError = e

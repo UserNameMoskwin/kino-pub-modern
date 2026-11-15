@@ -5,21 +5,20 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
-import androidx.tv.material3.Button
+import androidx.tv.material3.LocalContentColor
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import androidx.tv.material3.darkColorScheme
@@ -35,18 +34,30 @@ class MainActivity : ComponentActivity() {
         )
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(background = Background, surface = Background)) {
-                Box(Modifier.fillMaxSize().background(Background), contentAlignment = Alignment.Center) {
-                    App(kinopub)
+                // Без Surface цвет текста по умолчанию чёрный — на тёмном фоне его не видно.
+                CompositionLocalProvider(LocalContentColor provides Foreground) {
+                    Box(Modifier.fillMaxSize().background(Background), contentAlignment = Alignment.Center) {
+                        App(kinopub, resumes)
+                    }
                 }
             }
         }
     }
+
+    /** Счётчик возвратов в приложение: по нему главный экран обновляет данные. */
+    private var resumes by mutableIntStateOf(0)
+
+    override fun onResume() {
+        super.onResume()
+        resumes++
+    }
 }
 
 val Background = Color(0xFF141414)
+val Foreground = Color(0xFFEDEDED)
 
 @Composable
-private fun App(kinopub: Kinopub) {
+private fun App(kinopub: Kinopub, resumes: Int) {
     var loggedIn by remember { mutableStateOf(kinopub.auth.isLoggedIn) }
     when {
         BuildConfig.CLIENT_SECRET.isEmpty() ->
@@ -59,19 +70,8 @@ private fun App(kinopub: Kinopub) {
                     kinopub.notifyDevice("moskwin-pub", Build.MODEL, "Android ${Build.VERSION.RELEASE}")
                 }
             }
-            HomeStub(onLogout = {
-                kinopub.auth.logoutLocally()
-                loggedIn = false
-            })
+            // Сюда попадаем, когда сервер отклонил токены: они уже стёрты, нужен новый вход.
+            HomeScreen(kinopub, refreshKey = resumes, onLoginRequired = { loggedIn = false })
         }
-    }
-}
-
-/** Заглушка до шага 2 (главный экран). */
-@Composable
-private fun HomeStub(onLogout: () -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(24.dp)) {
-        Text("Вход выполнен", style = MaterialTheme.typography.headlineMedium)
-        Button(onClick = onLogout) { Text("Выйти") }
     }
 }

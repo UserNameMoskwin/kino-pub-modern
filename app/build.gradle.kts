@@ -48,4 +48,6 @@ dependencies {
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.tv:tv-material:1.0.0")
+    // Обложки: кэш на диске, загрузка в размере карточки.
+    implementation("io.coil-kt:coil-compose:2.7.0")
 }
