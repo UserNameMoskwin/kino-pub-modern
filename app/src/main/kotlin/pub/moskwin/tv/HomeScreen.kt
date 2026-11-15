@@ -62,9 +62,11 @@ internal fun HomeScreen(
     kinopub: Kinopub,
     refreshKey: Int,
     notKids: Set<Int>,
+    hideAnime: Boolean,
     focus: FocusMemory,
     onOpen: (Int) -> Unit,
     onSearch: () -> Unit,
+    onSettings: () -> Unit,
     onLoginRequired: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -75,10 +77,10 @@ internal fun HomeScreen(
     var reload by remember { mutableStateOf(0) }
     remember { focus.pending = true }
 
-    LaunchedEffect(refreshKey, reload, notKids) {
+    LaunchedEffect(refreshKey, reload, notKids, hideAnime) {
         try {
             // Разбор ответов (около мегабайта JSON) — не в потоке интерфейса.
-            val fresh = Perf.timed("home") { withContext(Dispatchers.Default) { loadHome(kinopub, notKids) } }
+            val fresh = Perf.timed("home") { withContext(Dispatchers.Default) { loadHome(kinopub, notKids, hideAnime) } }
             error = null
             // Те же данные, что на экране, не пересобирают ряды.
             if (fresh != data) {
@@ -102,7 +104,7 @@ internal fun HomeScreen(
         }
     }
     Column(Modifier.fillMaxSize()) {
-        TopBar(kinopub, home?.device, focus, onSearch, onChanged = { reload++ })
+        TopBar(kinopub, home?.device, focus, onSearch, onSettings, onChanged = { reload++ })
         when {
             home != null -> Rows(home, focus, onOpen)
             error != null -> Centered {
@@ -125,7 +127,14 @@ internal fun Centered(content: @Composable () -> Unit) {
 
 /** Поиск и текущий сервер. Нажатие на сервер раскрывает список, второе — выбирает. */
 @Composable
-private fun TopBar(kinopub: Kinopub, device: Device?, focus: FocusMemory, onSearch: () -> Unit, onChanged: () -> Unit) {
+private fun TopBar(
+    kinopub: Kinopub,
+    device: Device?,
+    focus: FocusMemory,
+    onSearch: () -> Unit,
+    onSettings: () -> Unit,
+    onChanged: () -> Unit,
+) {
     val scope = rememberCoroutineScope()
     var expanded by remember { mutableStateOf(false) }
     // Выбор показывается сразу, не дожидаясь ответа сервера.
@@ -142,6 +151,7 @@ private fun TopBar(kinopub: Kinopub, device: Device?, focus: FocusMemory, onSear
         Text("moskwin-pub", style = MaterialTheme.typography.titleMedium, color = Dim)
         Spacer(Modifier.weight(1f))
         Button(onClick = onSearch, modifier = Modifier.restoresFocus(focus, "top:search")) { Text("Поиск") }
+        Button(onClick = onSettings, modifier = Modifier.restoresFocus(focus, "top:settings")) { Text("Настройки") }
         val servers = device?.servers.orEmpty()
         if (servers.isEmpty()) {
             // Список серверов ещё не получен.

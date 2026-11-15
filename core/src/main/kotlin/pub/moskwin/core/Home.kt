@@ -119,7 +119,7 @@ fun rankFresh(items: List<Item>, isKids: (Item) -> Boolean): List<Item> =
  * Собирает главный экран. [notKids] — исключения «Не детское», хранятся в приложении.
  * Второстепенные запросы (устройство, отметки серий) при сбое пропускаются.
  */
-suspend fun loadHome(api: Kinopub, notKids: Set<Int>): HomeData = coroutineScope {
+suspend fun loadHome(api: Kinopub, notKids: Set<Int>, hideAnime: Boolean = false): HomeData = coroutineScope {
     val history = (1..HISTORY_PAGES).map { async { api.history(it) } }
     val movies = (1..FRESH_PAGES).map { async { api.fresh("movie", it) } }
     val serials = (1..FRESH_PAGES).map { async { api.fresh("serial", it) } }
@@ -147,8 +147,9 @@ suspend fun loadHome(api: Kinopub, notKids: Set<Int>): HomeData = coroutineScope
         continueAdults = cards(adultEntries),
         continueKids = cards(kidsEntries),
         kidsFavorites = favorites,
-        freshMovies = rankFresh(movies.awaitAll().flatten(), kids),
-        freshSerials = rankFresh(serials.awaitAll().flatten(), kids),
+        // «Отключение аниме» убирает его только из новинок: начатое остаётся в «Продолжить».
+        freshMovies = rankFresh(movies.awaitAll().flatten()) { kids(it) || (hideAnime && it.isAnime) },
+        freshSerials = rankFresh(serials.awaitAll().flatten()) { kids(it) || (hideAnime && it.isAnime) },
         device = device.await(),
     )
 }

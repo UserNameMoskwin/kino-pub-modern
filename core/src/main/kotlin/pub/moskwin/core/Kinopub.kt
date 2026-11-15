@@ -2,7 +2,9 @@ package pub.moskwin.core
 
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.int
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.serializer
@@ -98,21 +100,46 @@ class Kinopub(
 
     suspend fun device(): Device {
         val device = get("device/info")["device"]!!.jsonObject
-        val servers = device["settings"]?.jsonObject?.get("serverLocation")?.jsonObject
+        val settings = device["settings"]?.takeUnless { it is JsonNull }?.jsonObject.orEmpty()
         return Device(
             id = device["id"]!!.jsonPrimitive.int,
-            servers = servers?.list<ServerOption>("value").orEmpty(),
+            title = device["title"]?.takeUnless { it is JsonNull }?.jsonPrimitive?.content.orEmpty(),
+            servers = settings[Device.SERVER]?.jsonObject?.list<ServerOption>("value").orEmpty(),
+            streams = settings[Device.STREAM]?.jsonObject?.list<ServerOption>("value").orEmpty(),
+            // Всё, что не список, — переключатели со значением 0/1.
+            toggles = settings.mapNotNull { (key, value) ->
+                val setting = value as? JsonObject ?: return@mapNotNull null
+                val flag = (setting["value"] as? JsonPrimitive)?.intOrNull ?: return@mapNotNull null
+                DeviceToggle(key, (setting["label"] as? JsonPrimitive)?.content.orEmpty(), flag == 1)
+            },
         )
     }
 
     /** Выбор сервера пишется в настройки устройства на стороне сервиса. */
-    suspend fun setServer(deviceId: Int, serverId: Int) {
+    suspend fun setServer(deviceId: Int, serverId: Int) = setDeviceSetting(deviceId, Device.SERVER, "$serverId")
+
+    /**
+     * Меняет одну настройку устройства на стороне сервиса: [Device.SERVER] и [Device.STREAM]
+     * принимают id варианта, переключатели — `1` или `0`.
+     */
+    suspend fun setDeviceSetting(deviceId: Int, key: String, value: String) {
         // kino.watch/api этот путь не обслуживает (404, проверено 2026-11-15), остальные адреса — да.
         authorized(
-            "v1/device/$deviceId/settings", emptyMap(), mapOf("serverLocation" to "$serverId"),
+            "v1/device/$deviceId/settings", emptyMap(), mapOf(key to value),
             failover = true, skipHostOn = setOf(404),
         )
     }
+
+    /** Отвязывает это устройство от аккаунта: токены перестают действовать, нужен новый вход по коду. */
+    suspend fun unlinkDevice() {
+        authorized("v1/device/unlink", emptyMap(), emptyMap(), failover = true, skipHostOn = setOf(404))
+        auth.logoutLocally()
+    }
+
+    /** Адрес трейлера: большой файл на видеосервере, по которому меряется скорость. */
+    suspend fun trailerUrl(itemId: Int): String? =
+        (get("items/$itemId", mapOf("nolinks" to "1"))["item"] as? JsonObject)
+            ?.get("trailer")?.let { it as? JsonObject }?.get("url")?.let { it as? JsonPrimitive }?.content
 
     private inline fun <reified T> JsonObject.list(key: String): List<T> =
         value<List<T>>(key).orEmpty()

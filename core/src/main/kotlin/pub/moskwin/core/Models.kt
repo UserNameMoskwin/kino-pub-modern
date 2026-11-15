@@ -89,9 +89,25 @@ data class BookmarkFolder(val id: Int, val title: String = "", val count: Int = 
 @Serializable
 data class ServerOption(val id: Int, val label: String = "", val selected: Int = 0)
 
-/** Текущее устройство и список серверов из его настроек. */
+/** Переключатель из настроек устройства на стороне сервиса: SSL, 4K, HEVC, HDR, смешанный плейлист. */
 @Serializable
-data class Device(val id: Int, val servers: List<ServerOption> = emptyList())
+data class DeviceToggle(val key: String, val label: String = "", val on: Boolean = false)
+
+/** Текущее устройство и его настройки на стороне сервиса. */
+@Serializable
+data class Device(
+    val id: Int,
+    val title: String = "",
+    val servers: List<ServerOption> = emptyList(),
+    /** Типы потока: HTTP, HLS, HLS2, HLS4. */
+    val streams: List<ServerOption> = emptyList(),
+    val toggles: List<DeviceToggle> = emptyList(),
+) {
+    companion object {
+        const val SERVER = "serverLocation"
+        const val STREAM = "streamingType"
+    }
+}
 
 @Serializable
 data class Country(val id: Int = 0, val title: String = "")

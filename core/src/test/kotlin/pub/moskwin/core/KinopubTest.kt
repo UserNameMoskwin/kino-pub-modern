@@ -181,14 +181,39 @@ class KinopubTest {
         assertEquals("item=9&folder=77", add.body.readUtf8())
     }
 
+    @Test fun `speed test expands a master playlist into segments and measures them`() = runTest {
+        val s = server()
+        s.enqueue(MockResponse().setBody("#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nlow/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=9\nhigh/index.m3u8\n"))
+        s.enqueue(MockResponse().setBody("#EXTM3U\n#EXTINF:4,\nseg1.ts\n#EXTINF:4,\nseg2.ts\n#EXT-X-ENDLIST\n"))
+        val segments = mediaSegments(s.url("/t/master.m3u8").toString())
+        assertEquals(listOf("/t/high/seg1.ts", "/t/high/seg2.ts"), segments.map { java.net.URI(it).path })
+        assertEquals("/t/high/index.m3u8", s.takeRequest().let { s.takeRequest().path })
+
+        repeat(2) { s.enqueue(MockResponse().setBody(okio.Buffer().write(ByteArray(900_000)))) }
+        val result = measureSpeed(segments)
+        assertTrue(result.mbps != null && result.mbps!! > 0, "скорость должна посчитаться: $result")
+        assertNull(result.problem)
+    }
+
     @Test fun `home rows decode from typed endpoints`() = runTest {
         val s = server()
-        s.enqueue(json("""{"status":200,"device":{"id":5,"settings":{"serverLocation":{"type":"list","value":[
-            {"id":1,"label":"Нидерланды","selected":1},{"id":3,"label":"Россия","selected":0}]}}}}"""))
+        s.enqueue(json("""{"status":200,"device":{"id":5,"title":"ТВ","settings":{
+            "supportSsl":{"value":1,"label":"Использовать SSL"},"support4k":{"value":0,"label":"Поддержка 4K"},
+            "serverLocation":{"type":"list","value":[
+              {"id":1,"label":"Нидерланды","selected":1},{"id":3,"label":"Россия","selected":0}]},
+            "streamingType":{"type":"list","value":[{"id":4,"label":"HLS4","selected":1}]}}}}"""))
         s.enqueue(json("""{"status":200,"items":[{"id":1,"title":"посмотрю","count":83,"posters":null}]}"""))
         s.enqueue(json("""{"status":200,"item":{"id":9,"seasons":[{"number":1,"episodes":[{"number":1,"duration":437,"time":437,"status":1}]}]}}"""))
         val kp = client(InMemoryTokenStore(Tokens("a", "r", 9_999)), s.base())
-        assertEquals(Device(5, listOf(ServerOption(1, "Нидерланды", 1), ServerOption(3, "Россия", 0))), kp.device())
+        assertEquals(
+            Device(
+                5, "ТВ",
+                servers = listOf(ServerOption(1, "Нидерланды", 1), ServerOption(3, "Россия", 0)),
+                streams = listOf(ServerOption(4, "HLS4", 1)),
+                toggles = listOf(DeviceToggle("supportSsl", "Использовать SSL", true), DeviceToggle("support4k", "Поддержка 4K", false)),
+            ),
+            kp.device(),
+        )
         assertEquals(listOf(BookmarkFolder(1, "посмотрю", 83)), kp.bookmarkFolders())
         assertEquals(1, kp.watching(9).seasons.single().episodes.single().status)
     }

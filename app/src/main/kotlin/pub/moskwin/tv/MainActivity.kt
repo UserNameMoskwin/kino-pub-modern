@@ -92,14 +92,16 @@ private fun App(kinopub: Kinopub, resumes: Int) {
             Text("Ключ клиента не задан: добавьте kinopub.clientId и kinopub.clientSecret в local.properties")
         !loggedIn -> LoginScreen(kinopub.auth, onLoggedIn = { loggedIn = true })
         else -> {
+            val context = LocalContext.current
+            val settings = remember { AppSettings(context.applicationContext) }
             LaunchedEffect(Unit) {
                 // Название устройства в списке на сайте; сбой здесь входу не мешает.
                 runCatching {
-                    kinopub.notifyDevice("moskwin-pub", Build.MODEL, "Android ${Build.VERSION.RELEASE}")
+                    kinopub.notifyDevice(settings.deviceName, Build.MODEL, "Android ${Build.VERSION.RELEASE}")
                 }
             }
             // onLoginRequired: сервер отклонил токены, они уже стёрты, нужен новый вход.
-            Screens(kinopub, resumes, onLoginRequired = { loggedIn = false })
+            Screens(kinopub, settings, resumes, onLoginRequired = { loggedIn = false })
         }
     }
 }
@@ -107,17 +109,18 @@ private fun App(kinopub: Kinopub, resumes: Int) {
 private sealed interface Screen {
     class Search(val memory: SearchMemory = SearchMemory()) : Screen
     class Card(val itemId: Int) : Screen
+    data object Settings : Screen
 }
 
-/** Главный экран и стопка открытых поверх него: поиск, карточки. «Назад» снимает верхний. */
+/** Главный экран и стопка открытых поверх него: поиск, карточки, настройки. «Назад» снимает верхний. */
 @Composable
-private fun Screens(kinopub: Kinopub, resumes: Int, onLoginRequired: () -> Unit) {
+private fun Screens(kinopub: Kinopub, settings: AppSettings, resumes: Int, onLoginRequired: () -> Unit) {
     val context = LocalContext.current
     val notKidsStore = remember { NotKidsStore(context.applicationContext) }
     var notKids by remember { mutableStateOf(notKidsStore.load()) }
     val stack = remember { mutableStateListOf<Screen>() }
     val homeFocus = remember { FocusMemory() }
-    // Растёт, когда в карточке меняют детскую папку: главный экран пересобирает ряды.
+    // Растёт, когда меняют детскую папку или настройки: главный экран пересобирает ряды.
     var kidsEdits by remember { mutableIntStateOf(0) }
     val states = rememberSaveableStateHolder()
 
@@ -126,6 +129,7 @@ private fun Screens(kinopub: Kinopub, resumes: Int, onLoginRequired: () -> Unit)
         null -> "home"
         is Screen.Search -> "search"
         is Screen.Card -> "card"
+        Screen.Settings -> "settings"
     }
     SideEffect { Perf.screen = screenName }
 
@@ -134,8 +138,10 @@ private fun Screens(kinopub: Kinopub, resumes: Int, onLoginRequired: () -> Unit)
         when (val top = stack.lastOrNull()) {
             null -> states.SaveableStateProvider("home") {
                 HomeScreen(
-                    kinopub, refreshKey = resumes + kidsEdits, notKids = notKids, focus = homeFocus,
+                    kinopub, refreshKey = resumes + kidsEdits, notKids = notKids, hideAnime = settings.hideAnime,
+                    focus = homeFocus,
                     onOpen = { stack += Screen.Card(it) },
+                    onSettings = { stack += Screen.Settings },
                     onSearch = {
                         // Новый поиск начинается с чистого экрана, без прокрутки прошлого.
                         states.removeState("search")
@@ -156,6 +162,11 @@ private fun Screens(kinopub: Kinopub, resumes: Int, onLoginRequired: () -> Unit)
                 },
                 onKidsChanged = { kidsEdits++ },
                 onLoginRequired = onLoginRequired,
+            )
+            Screen.Settings -> SettingsScreen(
+                kinopub, settings,
+                onChanged = { kidsEdits++ },
+                onLoggedOut = onLoginRequired,
             )
         }
     }
