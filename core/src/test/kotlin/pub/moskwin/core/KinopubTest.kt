@@ -155,6 +155,32 @@ class KinopubTest {
         assertEquals(0, kp.hosts.currentIndex)
     }
 
+    @Test fun `card decodes seasons and kids folder is created on first add`() = runTest {
+        val s = server()
+        s.enqueue(json("""{"status":200,"item":{"id":9,"type":"serial","title":"Блуи / Bluey","year":2019,"plot":"Описание",
+            "genres":[{"id":23,"title":"Мультфильм"}],"countries":[{"id":3,"title":"Австралия"}],"duration":{"average":437,"total":900},
+            "seasons":[{"number":1,"episodes":[{"id":1,"number":1,"title":"Эпизод","thumbnail":"t","duration":437,
+              "watched":1,"watching":{"status":1,"time":437}},{"id":2,"number":2,"duration":400,"watching":{"status":0,"time":100}}]}]}}"""))
+        s.enqueue(json("""{"status":200,"items":[{"id":1,"title":"посмотрю"}]}"""))
+        s.enqueue(json("""{"status":200,"folder":{"id":77,"title":"Нелли"}}"""))
+        s.enqueue(json("""{"status":200}"""))
+        val kp = client(InMemoryTokenStore(Tokens("a", "r", 9_999)), s.base())
+
+        val card = kp.details(9)
+        assertEquals("/v1/items/9?nolinks=1", s.takeRequest().path)
+        assertTrue(card.isSerial && card.item.isCartoon)
+        assertEquals("Австралия", card.countries.single().title)
+        assertEquals(2, card.resumePoint()?.number)
+        assertEquals(0.25f, card.resumePoint()?.progress)
+
+        setInKidsFolder(kp, itemId = 9, inFolder = true)
+        s.takeRequest()
+        assertEquals("title=%D0%9D%D0%B5%D0%BB%D0%BB%D0%B8", s.takeRequest().body.readUtf8())
+        val add = s.takeRequest()
+        assertEquals("/v1/bookmarks/add", add.path)
+        assertEquals("item=9&folder=77", add.body.readUtf8())
+    }
+
     @Test fun `home rows decode from typed endpoints`() = runTest {
         val s = server()
         s.enqueue(json("""{"status":200,"device":{"id":5,"settings":{"serverLocation":{"type":"list","value":[

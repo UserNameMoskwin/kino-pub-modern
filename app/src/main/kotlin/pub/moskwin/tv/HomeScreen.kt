@@ -1,23 +1,19 @@
 package pub.moskwin.tv
 
 import android.content.Context
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -29,19 +25,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.tv.material3.Border
 import androidx.tv.material3.Button
-import androidx.tv.material3.Card
-import androidx.tv.material3.CardDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
-import coil.compose.AsyncImage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -55,9 +43,6 @@ import pub.moskwin.core.LoginRequiredException
 import pub.moskwin.core.loadHome
 import java.io.File
 
-private val Dim = Color(0xFF9A9A9A)
-private val Edge = 48.dp
-
 /** Сохранённый главный экран: рисуется сразу при запуске, до ответа сети. */
 private class HomeCache(context: Context) {
     private val file = File(context.filesDir, "home.json")
@@ -66,21 +51,29 @@ private class HomeCache(context: Context) {
 }
 
 /**
- * Главный экран. [refreshKey] меняется при каждом возврате в приложение —
- * данные обновляются в фоне, экран при этом не очищается.
+ * Главный экран. Данные обновляются в фоне при каждом показе и при смене [refreshKey]
+ * (возврат в приложение, правка детского); экран при этом не очищается.
  */
 @Composable
-fun HomeScreen(kinopub: Kinopub, refreshKey: Int, onLoginRequired: () -> Unit) {
+internal fun HomeScreen(
+    kinopub: Kinopub,
+    refreshKey: Int,
+    notKids: Set<Int>,
+    focus: FocusMemory,
+    onOpen: (Int) -> Unit,
+    onSearch: () -> Unit,
+    onLoginRequired: () -> Unit,
+) {
     val context = LocalContext.current
     val cache = remember { HomeCache(context.applicationContext) }
     var data by remember { mutableStateOf(cache.load()) }
     var error by remember { mutableStateOf<String?>(null) }
     var reload by remember { mutableStateOf(0) }
+    remember { focus.pending = true }
 
-    LaunchedEffect(refreshKey, reload) {
+    LaunchedEffect(refreshKey, reload, notKids) {
         try {
-            // Исключения «Не детское» появятся вместе с карточкой (шаг 3).
-            val fresh = loadHome(kinopub, notKids = emptySet())
+            val fresh = loadHome(kinopub, notKids)
             data = fresh
             error = null
             withContext(Dispatchers.IO) { cache.save(fresh) }
@@ -95,9 +88,9 @@ fun HomeScreen(kinopub: Kinopub, refreshKey: Int, onLoginRequired: () -> Unit) {
 
     val home = data
     Column(Modifier.fillMaxSize()) {
-        TopBar(kinopub, home?.device, onChanged = { reload++ })
+        TopBar(kinopub, home?.device, focus, onSearch, onChanged = { reload++ })
         when {
-            home != null -> Rows(home)
+            home != null -> Rows(home, focus, onOpen)
             error != null -> Centered {
                 Text("Не удалось загрузить: $error", style = MaterialTheme.typography.titleMedium)
                 Button(onClick = { error = null; reload++ }) { Text("Повторить") }
@@ -108,7 +101,7 @@ fun HomeScreen(kinopub: Kinopub, refreshKey: Int, onLoginRequired: () -> Unit) {
 }
 
 @Composable
-private fun Centered(content: @Composable () -> Unit) {
+internal fun Centered(content: @Composable () -> Unit) {
     Column(
         Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterVertically),
@@ -116,9 +109,9 @@ private fun Centered(content: @Composable () -> Unit) {
     ) { content() }
 }
 
-/** Название и текущий сервер. Нажатие на сервер раскрывает список, второе — выбирает. */
+/** Поиск и текущий сервер. Нажатие на сервер раскрывает список, второе — выбирает. */
 @Composable
-private fun TopBar(kinopub: Kinopub, device: Device?, onChanged: () -> Unit) {
+private fun TopBar(kinopub: Kinopub, device: Device?, focus: FocusMemory, onSearch: () -> Unit, onChanged: () -> Unit) {
     val scope = rememberCoroutineScope()
     var expanded by remember { mutableStateOf(false) }
     // Выбор показывается сразу, не дожидаясь ответа сервера.
@@ -134,6 +127,7 @@ private fun TopBar(kinopub: Kinopub, device: Device?, onChanged: () -> Unit) {
     ) {
         Text("moskwin-pub", style = MaterialTheme.typography.titleMedium, color = Dim)
         Spacer(Modifier.weight(1f))
+        Button(onClick = onSearch, modifier = Modifier.restoresFocus(focus, "top:search")) { Text("Поиск") }
         val servers = device?.servers.orEmpty()
         if (servers.isEmpty()) {
             // Список серверов ещё не получен.
@@ -178,120 +172,64 @@ private fun TopBar(kinopub: Kinopub, device: Device?, onChanged: () -> Unit) {
     }
 }
 
+private class HomeRow(val title: String, val cards: List<ContinueCard>?, val items: List<Item>?)
+
 @Composable
-private fun Rows(home: HomeData) {
+private fun Rows(home: HomeData, focus: FocusMemory, onOpen: (Int) -> Unit) {
     // Пустые ряды не показываются; порядок — из docs/spec.md.
-    val rows = buildList<Pair<String, @Composable () -> Unit>> {
-        if (home.continueAdults.isNotEmpty()) add("Продолжить просмотр" to { ContinueRow(home.continueAdults, first = true) })
-        if (home.continueKids.isNotEmpty()) {
-            add("Нелли: продолжить" to { ContinueRow(home.continueKids, first = home.continueAdults.isEmpty()) })
-        }
-        if (home.kidsFavorites.isNotEmpty()) add("Нелли: избранное" to { PosterRow(home.kidsFavorites) })
-        if (home.freshMovies.isNotEmpty()) add("Новинки: фильмы" to { PosterRow(home.freshMovies) })
-        if (home.freshSerials.isNotEmpty()) add("Новинки: сериалы" to { PosterRow(home.freshSerials) })
-    }
+    val rows = listOf(
+        HomeRow("Продолжить просмотр", home.continueAdults, null),
+        HomeRow("Нелли: продолжить", home.continueKids, null),
+        HomeRow("Нелли: избранное", null, home.kidsFavorites),
+        HomeRow("Новинки: фильмы", null, home.freshMovies),
+        HomeRow("Новинки: сериалы", null, home.freshSerials),
+    ).filter { !(it.cards ?: it.items).isNullOrEmpty() }
 
     LazyColumn(contentPadding = PaddingValues(top = 12.dp, bottom = 40.dp)) {
-        items(rows, key = { it.first }) { (title, content) ->
+        itemsIndexed(rows, key = { _, row -> row.title }) { rowIndex, row ->
             Column(Modifier.padding(bottom = 20.dp)) {
                 Text(
-                    title,
+                    row.title,
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.padding(start = Edge, bottom = 4.dp),
                 )
-                content()
+                CardRow {
+                    row.cards?.let { cards ->
+                        itemsIndexed(cards, key = { _, card -> card.item.id }) { index, card ->
+                            val item = card.item
+                            MediaCard(
+                                image = item.posters.wide ?: item.posters.big,
+                                width = 256.dp, height = 144.dp,
+                                title = item.name,
+                                subtitle = if (card.season > 0) "Сезон ${card.season} · серия ${card.episode}"
+                                else item.year?.toString().orEmpty(),
+                                progress = card.progress,
+                                modifier = Modifier.restoresFocus(focus, "${row.title}:${item.id}", rowIndex == 0 && index == 0),
+                                onClick = { onOpen(item.id) },
+                            )
+                        }
+                    }
+                    row.items?.let { items ->
+                        itemsIndexed(items, key = { _, item -> item.id }) { index, item ->
+                            PosterCard(
+                                item,
+                                Modifier.restoresFocus(focus, "${row.title}:${item.id}", rowIndex == 0 && index == 0),
+                                onClick = { onOpen(item.id) },
+                            )
+                        }
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun CardRow(content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
+internal fun CardRow(content: LazyListScope.() -> Unit) {
     // Отступы внутри ряда оставляют место увеличенной карточке в фокусе.
     LazyRow(
         contentPadding = PaddingValues(horizontal = Edge, vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         content = content,
     )
-}
-
-@Composable
-private fun ContinueRow(cards: List<ContinueCard>, first: Boolean) {
-    val focus = remember { FocusRequester() }
-    if (first) LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
-    CardRow {
-        items(cards.size, key = { cards[it].item.id }) { index ->
-            val card = cards[index]
-            val item = card.item
-            MediaCard(
-                image = item.posters.wide ?: item.posters.big,
-                width = 256.dp, height = 144.dp,
-                title = item.name,
-                subtitle = if (card.season > 0) "Сезон ${card.season} · серия ${card.episode}" else item.year?.toString().orEmpty(),
-                progress = card.progress,
-                modifier = if (first && index == 0) Modifier.focusRequester(focus) else Modifier,
-            )
-        }
-    }
-}
-
-@Composable
-private fun PosterRow(items: List<Item>) {
-    CardRow {
-        items(items, key = { it.id }) { item ->
-            val rating = item.imdbRating?.takeIf { it > 0 }?.let { "IMDb %.1f".format(it) }
-            MediaCard(
-                image = item.posters.big ?: item.posters.medium,
-                width = 132.dp, height = 198.dp,
-                title = item.name,
-                subtitle = listOfNotNull(rating, item.year?.toString()).joinToString(" · "),
-                progress = null,
-            )
-        }
-    }
-}
-
-/** Карточка: обложка под размер, подпись, для «Продолжить» — полоска прогресса. */
-@Composable
-private fun MediaCard(
-    image: String?,
-    width: Dp,
-    height: Dp,
-    title: String,
-    subtitle: String,
-    progress: Float?,
-    modifier: Modifier = Modifier,
-) {
-    Column(modifier.width(width)) {
-        Card(
-            onClick = { /* Карточка фильма — шаг 3. */ },
-            modifier = Modifier.size(width, height),
-            scale = CardDefaults.scale(focusedScale = 1.06f),
-            border = CardDefaults.border(
-                focusedBorder = Border(androidx.compose.foundation.BorderStroke(3.dp, Color.White)),
-            ),
-        ) {
-            Box(Modifier.fillMaxSize().background(Color(0xFF242424))) {
-                AsyncImage(
-                    model = image,
-                    contentDescription = title,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-                if (progress != null) {
-                    Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(Color(0x99000000))) {
-                        Box(Modifier.fillMaxHeight().fillMaxWidth(progress.coerceIn(0f, 1f)).background(Color(0xFFE50914)))
-                    }
-                }
-            }
-        }
-        Text(
-            title,
-            style = MaterialTheme.typography.bodyMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 10.dp),
-        )
-        Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
 }

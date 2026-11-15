@@ -61,6 +61,23 @@ class HomeTest {
         assertEquals(listOf(2, 4, 1), rankFresh(items) { it.id == 6 }.map { it.id })
     }
 
+    private fun details(vararg statuses: Int) = Details(
+        item(1), "", "", "", emptyList(), ItemDuration(),
+        seasons = listOf(
+            Season(1, episodes = statuses.take(2).mapIndexed { i, s -> Video(number = i + 1, duration = 100.0, watching = Watching(s, 50.0)) }),
+            Season(2, episodes = statuses.drop(2).mapIndexed { i, s -> Video(number = i + 1, snumber = 2, duration = 100.0, watching = Watching(s, 50.0)) }),
+        ),
+        videos = emptyList(),
+    )
+
+    @Test fun `resume point is the started episode, then the next one, then the first`() {
+        assertEquals(1 to 0, details(-1, -1, -1).resumePoint()?.let { it.number to it.snumber })
+        assertEquals(2 to 0, details(1, 0, -1).resumePoint()?.let { it.number to it.snumber })
+        assertEquals(1 to 2, details(1, 1, -1).resumePoint()?.let { it.number to it.snumber })
+        assertEquals(1 to 0, details(1, 1, 1).resumePoint()?.let { it.number to it.snumber })
+        assertEquals(0.5f, details(1, 0, -1).resumePoint()?.progress)
+    }
+
     @Test fun `live history row decodes`() {
         val json = """{"time":437,"counter":0,"first_seen":1,"last_seen":1794757699,
             "item":{"id":63673,"type":"serial","subtype":"","title":"Блуи / Bluey","year":2019,"voice":null,

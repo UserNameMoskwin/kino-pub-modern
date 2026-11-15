@@ -55,6 +55,38 @@ class Kinopub(
 
     suspend fun bookmarkItems(folderId: Int): List<Item> = get("bookmarks/$folderId").list("items")
 
+    /** Папки закладок, в которых лежит фильм или сериал. */
+    suspend fun itemFolders(itemId: Int): List<BookmarkFolder> =
+        get("bookmarks/get-item-folders", mapOf("item" to "$itemId")).list("folders")
+
+    suspend fun createFolder(title: String): BookmarkFolder =
+        post("bookmarks/create", mapOf("title" to title)).value("folder")
+            ?: throw ApiException(200, "bad_response", "сервер не вернул созданную папку")
+
+    suspend fun addBookmark(itemId: Int, folderId: Int) {
+        post("bookmarks/add", mapOf("item" to "$itemId", "folder" to "$folderId"))
+    }
+
+    suspend fun removeBookmark(itemId: Int, folderId: Int) {
+        post("bookmarks/remove-item", mapOf("item" to "$itemId", "folder" to "$folderId"))
+    }
+
+    /** Карточка без ссылок на видео: у больших сериалов они занимают почти весь ответ. */
+    suspend fun details(itemId: Int): Details {
+        val json = get("items/$itemId", mapOf("nolinks" to "1"))["item"]
+            ?: throw ApiException(200, "bad_response", "в ответе нет item")
+        val item = LenientJson.decodeFromJsonElement(Item.serializer(), json)
+        val extra = LenientJson.decodeFromJsonElement(ItemExtra.serializer(), json)
+        return Details(
+            item, extra.plot, extra.cast, extra.director, extra.countries,
+            extra.duration, extra.seasons, extra.videos,
+        )
+    }
+
+    /** Поиск по названию, режиссёру и актёрам. Сервер требует не меньше трёх символов. */
+    suspend fun search(query: String): List<Item> =
+        get("items/search", mapOf("q" to query, "perpage" to "40")).list("items")
+
     /** Отметки просмотра по всем сериям. */
     suspend fun watching(itemId: Int): WatchItem =
         get("watching", mapOf("id" to "$itemId")).value("item") ?: WatchItem(itemId)

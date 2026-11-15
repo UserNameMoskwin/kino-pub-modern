@@ -38,6 +38,25 @@ data class HomeData(
 /** Папка закладок с детским. В спецификации она «Нелли», в аккаунте сейчас — «мутики». */
 val KIDS_FOLDER_TITLES = setOf("нелли", "мутики")
 
+/** Название папки, которую приложение создаёт само, если детской ещё нет. */
+const val KIDS_FOLDER_NEW = "Нелли"
+
+suspend fun kidsFolder(api: Kinopub): BookmarkFolder? =
+    api.bookmarkFolders().firstOrNull { it.title.trim().lowercase() in KIDS_FOLDER_TITLES }
+
+/** Лежит ли фильм или сериал в детской папке. */
+suspend fun isInKidsFolder(api: Kinopub, itemId: Int): Boolean =
+    api.itemFolders(itemId).any { it.title.trim().lowercase() in KIDS_FOLDER_TITLES }
+
+/** Кнопка «Для Нелли»: кладёт в детскую папку или убирает из неё. Папка создаётся при первом добавлении. */
+suspend fun setInKidsFolder(api: Kinopub, itemId: Int, inFolder: Boolean) {
+    val folder = kidsFolder(api)
+    when {
+        inFolder -> api.addBookmark(itemId, (folder ?: api.createFolder(KIDS_FOLDER_NEW)).id)
+        folder != null -> api.removeBookmark(itemId, folder.id)
+    }
+}
+
 /** Досмотрено, если осталось меньше 7% — титры. */
 private const val FINISHED = 0.93
 
