@@ -72,6 +72,8 @@ data class WatchEpisode(
     val time: Double = 0.0,
     /** -1 не смотрели, 0 начали, 1 просмотрели. */
     val status: Int = -1,
+    /** Когда серию смотрели в последний раз, unixtime. */
+    val updated: Long = 0,
 )
 
 @Serializable
@@ -158,16 +160,28 @@ data class Details(
         else videos.sortedBy { it.number }
 
     /**
-     * С чего продолжать: недосмотренное последнее из начатых, после досмотренного —
-     * следующее, если ничего не начато или всё досмотрено — первое.
+     * С чего продолжать. С отметками [watch] — как на главном экране: серия, которую
+     * смотрели последней, а если она досмотрена — следующая непросмотренная после неё.
+     * Без них (фильмы, сбой запроса): начатая и не досмотренная серия (последняя из
+     * таких), иначе следующая после последней просмотренной, иначе — первая.
      */
-    fun resumePoint(): Video? {
+    fun resumePoint(watch: WatchItem? = null): Video? {
         val all = allVideos
-        val last = all.indexOfLast { it.watching.status != -1 }
-        return when {
-            last == -1 -> all.firstOrNull()
-            !all[last].watched -> all[last]
-            else -> all.getOrNull(last + 1) ?: all.first()
+        if (isSerial && watch != null) {
+            val marks = watch.seasons.sortedBy { it.number }
+                .flatMap { s -> s.episodes.sortedBy { it.number }.map { s.number to it } }
+            val latest = marks.withIndex().filter { it.value.second.status != -1 }.maxByOrNull { it.value.second.updated }
+            if (latest != null) {
+                val target = if (latest.value.second.status == 0) latest.value
+                else marks.drop(latest.index + 1).firstOrNull { it.second.status != 1 }
+                val video = target?.let { (season, episode) ->
+                    seasons.firstOrNull { it.number == season }?.episodes?.firstOrNull { it.number == episode.number }
+                }
+                return video ?: all.firstOrNull()
+            }
         }
+        all.lastOrNull { it.watching.status == 0 }?.let { return it }
+        val last = all.indexOfLast { it.watched }
+        return all.getOrNull(last + 1) ?: all.firstOrNull()
     }
 }

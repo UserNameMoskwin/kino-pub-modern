@@ -15,7 +15,17 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -55,9 +65,21 @@ internal fun SearchScreen(kinopub: Kinopub, memory: SearchMemory, onOpen: (Int) 
     var status by remember { mutableStateOf(if (memory.results == null) HINT else "") }
     var fieldFocused by remember { mutableStateOf(false) }
     val fieldFocus = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
     remember { focus.pending = focus.key != null }
+    // При возврате из карточки фокус должен вернуться на результат. Пока он не вернулся,
+    // поле ввода фокус не принимает: иначе оно перехватит его и откроет клавиатуру.
+    var restoring by remember { mutableStateOf(focus.key != null) }
 
-    LaunchedEffect(Unit) { if (focus.key == null) runCatching { fieldFocus.requestFocus() } }
+    LaunchedEffect(Unit) {
+        if (restoring) {
+            delay(400)
+            restoring = false
+        } else {
+            runCatching { fieldFocus.requestFocus() }
+        }
+    }
     LaunchedEffect(query) {
         val text = query.trim()
         // Вернулись из карточки: результаты этого запроса уже есть.
@@ -101,9 +123,28 @@ internal fun SearchScreen(kinopub: Kinopub, memory: SearchMemory, onOpen: (Int) 
                 textStyle = MaterialTheme.typography.titleMedium.copy(color = Foreground),
                 cursorBrush = SolidColor(Foreground),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                // Кнопка поиска на клавиатуре убирает её и переводит фокус на результаты.
+                keyboardActions = KeyboardActions(onSearch = {
+                    keyboard?.hide()
+                    focusManager.moveFocus(FocusDirection.Down)
+                }),
                 modifier = Modifier
                     .fillMaxWidth()
                     .focusRequester(fieldFocus)
+                    .focusProperties { canFocus = !restoring }
+                    // Поле ввода само забирает стрелки пульта: «вниз» уводим к результатам,
+                    // нажатие в центре снова открывает клавиатуру.
+                    .onPreviewKeyEvent { event ->
+                        when {
+                            event.key == Key.DirectionDown && event.type == KeyEventType.KeyDown ->
+                                focusManager.moveFocus(FocusDirection.Down)
+                            event.key == Key.DirectionCenter && event.type == KeyEventType.KeyUp -> {
+                                keyboard?.show()
+                                true
+                            }
+                            else -> false
+                        }
+                    }
                     .onFocusChanged {
                         fieldFocused = it.isFocused
                         if (it.isFocused) focus.key = null

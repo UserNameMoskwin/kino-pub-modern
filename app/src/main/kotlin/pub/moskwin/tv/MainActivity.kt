@@ -107,11 +107,16 @@ private fun Screens(kinopub: Kinopub, resumes: Int, onLoginRequired: () -> Unit)
                 HomeScreen(
                     kinopub, refreshKey = resumes + kidsEdits, notKids = notKids, focus = homeFocus,
                     onOpen = { stack += Screen.Card(it) },
-                    onSearch = { stack += Screen.Search() },
+                    onSearch = {
+                        // Новый поиск начинается с чистого экрана, без прокрутки прошлого.
+                        states.removeState("search")
+                        stack += Screen.Search()
+                    },
                     onLoginRequired = onLoginRequired,
                 )
             }
-            is Screen.Search -> states.SaveableStateProvider(top) {
+            // Ключ должен ложиться в Bundle; поиск в стопке один.
+            is Screen.Search -> states.SaveableStateProvider("search") {
                 SearchScreen(kinopub, top.memory, onOpen = { stack += Screen.Card(it) })
             }
             is Screen.Card -> DetailsScreen(

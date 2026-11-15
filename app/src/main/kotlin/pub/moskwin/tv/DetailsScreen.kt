@@ -35,6 +35,8 @@ import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import pub.moskwin.core.Details
 import pub.moskwin.core.Kinopub
@@ -58,13 +60,20 @@ internal fun DetailsScreen(
     onLoginRequired: () -> Unit,
 ) {
     var details by remember { mutableStateOf<Details?>(null) }
+    var resume by remember { mutableStateOf<Video?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var attempt by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(itemId, attempt) {
         error = null
         try {
-            details = kinopub.details(itemId)
+            coroutineScope {
+                // Отметки серий нужны, чтобы «Продолжить» совпадало с главным экраном.
+                val marks = async { runCatching { kinopub.watching(itemId) }.getOrNull() }
+                val loaded = kinopub.details(itemId)
+                resume = loaded.resumePoint(marks.await())
+                details = loaded
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: LoginRequiredException) {
@@ -76,7 +85,7 @@ internal fun DetailsScreen(
 
     val loaded = details
     when {
-        loaded != null -> Loaded(kinopub, loaded, notKids, onNotKids, onKidsChanged)
+        loaded != null -> Loaded(kinopub, loaded, resume, notKids, onNotKids, onKidsChanged)
         error != null -> Centered {
             Text("Не удалось открыть: $error", style = MaterialTheme.typography.titleMedium)
             Button(onClick = { attempt++ }) { Text("Повторить") }
@@ -89,13 +98,13 @@ internal fun DetailsScreen(
 private fun Loaded(
     kinopub: Kinopub,
     details: Details,
+    resume: Video?,
     notKids: Set<Int>,
     onNotKids: (Int, Boolean) -> Unit,
     onKidsChanged: () -> Unit,
 ) {
     val item = details.item
     val scope = rememberCoroutineScope()
-    val resume = remember(details) { details.resumePoint() }
     val playFocus = remember { FocusRequester() }
     var notice by remember { mutableStateOf<String?>(null) }
     // null — ещё не знаем, лежит ли в детской папке.

@@ -76,6 +76,22 @@ class HomeTest {
         assertEquals(1 to 2, details(1, 1, -1).resumePoint()?.let { it.number to it.snumber })
         assertEquals(1 to 0, details(1, 1, 1).resumePoint()?.let { it.number to it.snumber })
         assertEquals(0.5f, details(1, 0, -1).resumePoint()?.progress)
+        // Пропущенная серия посреди просмотренных: продолжаем её, а не начинаем сначала.
+        assertEquals(2 to 0, details(1, 0, 1, 1).resumePoint()?.let { it.number to it.snumber })
+    }
+
+    @Test fun `resume point follows the most recently watched episode when marks are known`() {
+        fun marks(vararg e: Pair<Int, Long>) = WatchItem(1, listOf(
+            WatchSeason(1, e.take(2).mapIndexed { i, (s, u) -> WatchEpisode(number = i + 1, status = s, updated = u) }),
+            WatchSeason(2, e.drop(2).mapIndexed { i, (s, u) -> WatchEpisode(number = i + 1, status = s, updated = u) }),
+        ))
+        val card = details(0, 1, 0, -1)
+        // Последней смотрели начатую серию 1 первого сезона, хотя во втором тоже есть начатая.
+        assertEquals(1 to 0, card.resumePoint(marks(0 to 30L, 1 to 20L, 0 to 10L, -1 to 0L))?.let { it.number to it.snumber })
+        // Последняя просмотренная досмотрена — следующая непросмотренная после неё.
+        assertEquals(1 to 2, card.resumePoint(marks(0 to 5L, 1 to 20L, 0 to 10L, -1 to 0L))?.let { it.number to it.snumber })
+        // После неё всё просмотрено — с начала.
+        assertEquals(1 to 0, card.resumePoint(marks(1 to 5L, 1 to 9L, 1 to 8L, 1 to 30L))?.let { it.number to it.snumber })
     }
 
     @Test fun `live history row decodes`() {
