@@ -95,6 +95,9 @@ private val SPEEDS = listOf(0.75f, 1f, 1.25f, 1.5f, 2f)
 private const val CONTROLS_MS = 4_000L
 private const val REPORT_MS = 30_000L
 
+/** Шаг перемотки кнопками влево и вправо. */
+private const val SEEK_MS = 15_000L
+
 /**
  * Плеер. Пульт: OK — пауза, влево/вправо — перемотка, вверх/вниз — панель выбора
  * (озвучка, субтитры, качество, скорость, сервер), «назад» — закрыть панель или выйти.
@@ -301,9 +304,9 @@ internal fun PlayerScreen(
     LaunchedEffect(panel) { if (panel == null) runCatching { root.requestFocus() } }
     BackHandler(enabled = panel != null) { panel = if (panel == Panel.MENU || panel == Panel.EXTERNAL) null else Panel.MENU }
 
-    fun seekBy(repeat: Int, forward: Boolean) {
-        val step = when { repeat > 15 -> 60_000L; repeat > 5 -> 30_000L; else -> 10_000L }
-        val target = (player.currentPosition + if (forward) step else -step).coerceIn(0, duration.coerceAtLeast(0))
+    fun seekBy(forward: Boolean) {
+        // Удержание кнопки повторяет нажатия, поэтому отдельного ускорения нет.
+        val target = (player.currentPosition + if (forward) SEEK_MS else -SEEK_MS).coerceIn(0, duration.coerceAtLeast(0))
         player.seekTo(target)
         position = target
         showControls()
@@ -326,8 +329,8 @@ internal fun PlayerScreen(
                     }
                     Key.MediaPlay -> { player.play(); showControls(); true }
                     Key.MediaPause -> { player.pause(); showControls(); true }
-                    Key.DirectionRight, Key.MediaFastForward -> { seekBy(event.nativeKeyEvent.repeatCount, true); true }
-                    Key.DirectionLeft, Key.MediaRewind -> { seekBy(event.nativeKeyEvent.repeatCount, false); true }
+                    Key.DirectionRight, Key.MediaFastForward -> { seekBy(true); true }
+                    Key.DirectionLeft, Key.MediaRewind -> { seekBy(false); true }
                     Key.DirectionUp, Key.DirectionDown, Key.Menu -> { panel = Panel.MENU; true }
                     else -> false
                 }
