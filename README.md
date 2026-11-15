@@ -15,9 +15,12 @@
 ## Проверка и сборка
 
 ```
-gradle :core:test
-gradle :app:assembleDebug
+gradlew :core:test
+gradlew :app:assembleDebug
 ```
+
+Сборка идёт через Gradle wrapper (8.11.1) и требует JDK 17–21 в `JAVA_HOME`:
+JBR из Android Studio (Java 25) не подходит.
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`. Перед сборкой в `local.properties`
 (в репозиторий не попадает) нужны три строки:
