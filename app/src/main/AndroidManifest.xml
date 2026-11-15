@@ -12,6 +12,8 @@
         android:icon="@drawable/banner"
         android:label="@string/app_name"
         android:theme="@android:style/Theme.Material.NoActionBar">
+        <!-- Разрешает снимать профиль процессора (simpleperf) с оптимизированной сборки через adb. -->
+        <profileable android:shell="true" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

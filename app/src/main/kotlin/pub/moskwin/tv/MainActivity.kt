@@ -1,6 +1,9 @@
 package pub.moskwin.tv
 
 import android.content.Context
+import androidx.compose.runtime.SideEffect
+import coil.Coil
+import coil.ImageLoader
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -9,6 +12,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -37,11 +41,30 @@ class MainActivity : ComponentActivity() {
             ClientCredentials(BuildConfig.CLIENT_ID, BuildConfig.CLIENT_SECRET),
             PrefsTokenStore(applicationContext),
         )
+        Perf.install(this)
+        kinopub.onRequest = { path, status, ms, size -> Perf.event("http", ms, "$status ${size / 1024}KB $path") }
+        Coil.setImageLoader(
+            ImageLoader.Builder(applicationContext)
+                .eventListener(Perf.images)
+                // Обложки непрозрачные: RGB565 вдвое экономит память и ускоряет отрисовку.
+                .allowRgb565(true)
+                // Декодирование тяжёлых обложек не должно занимать все ядра слабого процессора.
+                .bitmapFactoryMaxParallelism(2)
+                .build(),
+        )
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(background = Background, surface = Background)) {
                 // Без Surface цвет текста по умолчанию чёрный — на тёмном фоне его не видно.
                 CompositionLocalProvider(LocalContentColor provides Foreground) {
-                    Box(Modifier.fillMaxSize().background(Background), contentAlignment = Alignment.Center) {
+                    // На телевизоре включена служба специальных возможностей (лаунчер ловит
+                    // ею кнопки пульта). При включённой службе Compose на каждое изменение
+                    // пересчитывает описание и координаты всех элементов — по профилю это
+                    // половина времени кадра. Описание экрана отключено целиком; цена —
+                    // приложение не читается экранным диктором.
+                    Box(
+                        Modifier.fillMaxSize().background(Background).clearAndSetSemantics { },
+                        contentAlignment = Alignment.Center,
+                    ) {
                         App(kinopub, resumes)
                     }
                 }
@@ -99,6 +122,12 @@ private fun Screens(kinopub: Kinopub, resumes: Int, onLoginRequired: () -> Unit)
     val states = rememberSaveableStateHolder()
 
     BackHandler(enabled = stack.isNotEmpty()) { stack.removeAt(stack.lastIndex) }
+    val screenName = when (stack.lastOrNull()) {
+        null -> "home"
+        is Screen.Search -> "search"
+        is Screen.Card -> "card"
+    }
+    SideEffect { Perf.screen = screenName }
 
     // Положение прокрутки каждого экрана сохраняется, пока он закрыт другим.
     Box(Modifier.fillMaxSize()) {

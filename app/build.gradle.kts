@@ -26,6 +26,18 @@ android {
         buildConfigField("String", "CLIENT_SECRET", quoted("kinopub.clientSecret"))
     }
 
+    buildTypes {
+        // На телевизор ставится эта сборка: отладочная в разы медленнее (Compose без
+        // оптимизации). Подпись отладочная — приложение личное, в магазин не идёт,
+        // и так обе сборки ставятся друг поверх друга без потери входа.
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            signingConfig = signingConfigs.getByName("debug")
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
+
     buildFeatures {
         compose = true
         buildConfig = true

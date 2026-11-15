@@ -1,21 +1,29 @@
 package pub.moskwin.tv
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -24,9 +32,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.tv.material3.Border
-import androidx.tv.material3.Card
-import androidx.tv.material3.CardDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
@@ -35,6 +40,7 @@ import pub.moskwin.core.Item
 internal val Dim = Color(0xFF9A9A9A)
 internal val Accent = Color(0xFFE50914)
 internal val Edge = 48.dp
+private val CardShape = RoundedCornerShape(8.dp)
 
 /**
  * Где стоял фокус на экране, пока тот был закрыт другим. [pending] взводится при
@@ -76,26 +82,49 @@ internal fun MediaCard(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
+    // Своя рамка фокуса вместо Card из tv-material: та на слабом процессоре телевизора
+    // заметно дороже в сборке и перерисовке. Масштаб и рамка читаются на этапе
+    // отрисовки, поэтому смена фокуса не пересобирает карточку.
+    var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(if (focused) 1.06f else 1f, tween(120), label = "focus")
     Column(modifier.width(width)) {
-        Card(
-            onClick = onClick,
-            modifier = Modifier.size(width, height),
-            scale = CardDefaults.scale(focusedScale = 1.06f),
-            border = CardDefaults.border(focusedBorder = Border(BorderStroke(3.dp, Color.White))),
-        ) {
-            Box(Modifier.fillMaxSize().background(Color(0xFF242424))) {
-                AsyncImage(
-                    model = image,
-                    contentDescription = title,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-                if (progress != null && progress > 0f) {
-                    Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(Color(0x99000000))) {
-                        Box(Modifier.fillMaxHeight().fillMaxWidth(progress.coerceIn(0f, 1f)).background(Accent))
-                    }
+        Box(
+            Modifier
+                .size(width, height)
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    shape = CardShape
+                    clip = true
                 }
-            }
+                .onFocusChanged { focused = it.isFocused }
+                .clickable(interactionSource = null, indication = null, onClick = onClick)
+                .background(Color(0xFF242424))
+                .drawWithContent {
+                    drawContent()
+                    if (progress != null && progress > 0f) {
+                        val bar = 4.dp.toPx()
+                        drawRect(Color(0x99000000), Offset(0f, size.height - bar), Size(size.width, bar))
+                        drawRect(Accent, Offset(0f, size.height - bar), Size(size.width * progress.coerceIn(0f, 1f), bar))
+                    }
+                    if (focused) {
+                        val stroke = 3.dp.toPx()
+                        drawRoundRect(
+                            Color.White,
+                            topLeft = Offset(stroke / 2, stroke / 2),
+                            size = Size(size.width - stroke, size.height - stroke),
+                            cornerRadius = CornerRadius(8.dp.toPx() - stroke / 2),
+                            style = Stroke(stroke),
+                        )
+                    }
+                },
+        ) {
+            AsyncImage(
+                model = image,
+                contentDescription = title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
         }
         Text(
             title,

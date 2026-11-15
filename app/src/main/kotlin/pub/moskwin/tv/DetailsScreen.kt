@@ -36,7 +36,8 @@ import androidx.tv.material3.Text
 import coil.compose.AsyncImage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import pub.moskwin.core.Details
 import pub.moskwin.core.Kinopub
@@ -67,13 +68,13 @@ internal fun DetailsScreen(
     LaunchedEffect(itemId, attempt) {
         error = null
         try {
-            coroutineScope {
+            Perf.timed("card", "id=$itemId") { withContext(Dispatchers.Default) {
                 // Отметки серий нужны, чтобы «Продолжить» совпадало с главным экраном.
                 val marks = async { runCatching { kinopub.watching(itemId) }.getOrNull() }
                 val loaded = kinopub.details(itemId)
                 resume = loaded.resumePoint(marks.await())
                 details = loaded
-            }
+            } }
         } catch (e: CancellationException) {
             throw e
         } catch (e: LoginRequiredException) {

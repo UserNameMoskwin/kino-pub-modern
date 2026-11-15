@@ -44,6 +44,10 @@ internal class Transport(
     private val hosts: Hosts,
     private val retryDelayMs: Long = 3_000,
 ) {
+    /** Наблюдатель за запросами: путь, код ответа, миллисекунды, размер тела в символах. */
+    @Volatile
+    var onRequest: ((path: String, status: Int, ms: Long, size: Int) -> Unit)? = null
+
     suspend fun send(
         path: String,
         query: Map<String, String?> = emptyMap(),
@@ -72,7 +76,9 @@ internal class Transport(
                 }
             }.build()
             try {
+                val began = System.nanoTime()
                 val response = executeWithRateLimit(request, retry = failover)
+                onRequest?.invoke(path, response.status, (System.nanoTime() - began) / 1_000_000, response.body.length)
                 if (response.status in GATEWAY_ERRORS || response.status in skipHostOn) {
                     lastError = response.toException()
                     continue

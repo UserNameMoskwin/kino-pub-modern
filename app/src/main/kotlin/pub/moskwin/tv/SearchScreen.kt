@@ -43,7 +43,9 @@ import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import pub.moskwin.core.Item
 import pub.moskwin.core.Kinopub
 
@@ -94,7 +96,7 @@ internal fun SearchScreen(kinopub: Kinopub, memory: SearchMemory, onOpen: (Int) 
         delay(500)
         status = "Ищу…"
         try {
-            val found = kinopub.search(text)
+            val found = Perf.timed("search") { withContext(Dispatchers.Default) { kinopub.search(text) } }
             results = found
             status = if (found.isEmpty()) "Ничего не найдено" else ""
             memory.query = query

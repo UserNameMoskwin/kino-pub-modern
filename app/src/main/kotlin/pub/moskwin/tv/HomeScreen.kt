@@ -9,7 +9,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.key
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -21,6 +23,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -67,16 +70,21 @@ internal fun HomeScreen(
     val context = LocalContext.current
     val cache = remember { HomeCache(context.applicationContext) }
     var data by remember { mutableStateOf(cache.load()) }
+    val fromCache = remember { data != null }
     var error by remember { mutableStateOf<String?>(null) }
     var reload by remember { mutableStateOf(0) }
     remember { focus.pending = true }
 
     LaunchedEffect(refreshKey, reload, notKids) {
         try {
-            val fresh = loadHome(kinopub, notKids)
-            data = fresh
+            // Разбор ответов (около мегабайта JSON) — не в потоке интерфейса.
+            val fresh = Perf.timed("home") { withContext(Dispatchers.Default) { loadHome(kinopub, notKids) } }
             error = null
-            withContext(Dispatchers.IO) { cache.save(fresh) }
+            // Те же данные, что на экране, не пересобирают ряды.
+            if (fresh != data) {
+                data = fresh
+                withContext(Dispatchers.IO) { cache.save(fresh) }
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: LoginRequiredException) {
@@ -87,6 +95,12 @@ internal fun HomeScreen(
     }
 
     val home = data
+    if (home != null) {
+        LaunchedEffect(Unit) {
+            withFrameNanos { }
+            Perf.homeShown(fromCache)
+        }
+    }
     Column(Modifier.fillMaxSize()) {
         TopBar(kinopub, home?.device, focus, onSearch, onChanged = { reload++ })
         when {
@@ -185,9 +199,13 @@ private fun Rows(home: HomeData, focus: FocusMemory, onOpen: (Int) -> Unit) {
         HomeRow("Новинки: сериалы", null, home.freshSerials),
     ).filter { !(it.cards ?: it.items).isNullOrEmpty() }
 
-    LazyColumn(contentPadding = PaddingValues(top = 12.dp, bottom = 40.dp)) {
-        itemsIndexed(rows, key = { _, row -> row.title }) { rowIndex, row ->
-            Column(Modifier.padding(bottom = 20.dp)) {
+    // Рядов всего пять, поэтому по вертикали список не ленивый: ряды создаются один раз,
+    // и прокрутка вниз только сдвигает готовое. С LazyColumn каждый новый ряд собирался
+    // прямо во время прокрутки — на процессоре телевизора это давало рывки. Внутри ряда
+    // по-прежнему существуют только видимые карточки.
+    Column(Modifier.verticalScroll(rememberScrollState()).padding(top = 12.dp, bottom = 40.dp)) {
+        rows.forEachIndexed { rowIndex, row ->
+            key(row.title) { Column(Modifier.padding(bottom = 20.dp)) {
                 Text(
                     row.title,
                     style = MaterialTheme.typography.titleMedium,
@@ -195,7 +213,7 @@ private fun Rows(home: HomeData, focus: FocusMemory, onOpen: (Int) -> Unit) {
                 )
                 CardRow {
                     row.cards?.let { cards ->
-                        itemsIndexed(cards, key = { _, card -> card.item.id }) { index, card ->
+                        itemsIndexed(cards, key = { _, card -> card.item.id }, contentType = { _, _ -> "wide" }) { index, card ->
                             val item = card.item
                             MediaCard(
                                 image = item.posters.wide ?: item.posters.big,
@@ -210,7 +228,7 @@ private fun Rows(home: HomeData, focus: FocusMemory, onOpen: (Int) -> Unit) {
                         }
                     }
                     row.items?.let { items ->
-                        itemsIndexed(items, key = { _, item -> item.id }) { index, item ->
+                        itemsIndexed(items, key = { _, item -> item.id }, contentType = { _, _ -> "poster" }) { index, item ->
                             PosterCard(
                                 item,
                                 Modifier.restoresFocus(focus, "${row.title}:${item.id}", rowIndex == 0 && index == 0),
@@ -219,7 +237,7 @@ private fun Rows(home: HomeData, focus: FocusMemory, onOpen: (Int) -> Unit) {
                         }
                     }
                 }
-            }
+            } }
         }
     }
 }

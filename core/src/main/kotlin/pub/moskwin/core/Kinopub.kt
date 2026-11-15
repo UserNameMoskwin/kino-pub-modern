@@ -25,6 +25,11 @@ class Kinopub(
     private val transport = Transport(http, hosts, retryDelayMs)
     val auth = Auth(transport, credentials, store, now)
 
+    /** Для замеров скорости: вызывается после каждого запроса (путь, код, мс, размер ответа). */
+    var onRequest: ((path: String, status: Int, ms: Long, size: Int) -> Unit)?
+        get() = transport.onRequest
+        set(value) { transport.onRequest = value }
+
     /** GET `v1/<path>`. [failover] = false для переключателей вроде `watching/toggle`. */
     suspend fun get(
         path: String,
