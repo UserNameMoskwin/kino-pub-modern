@@ -1,0 +1,49 @@
+
+API - Пользователь¶
+Содержание
+API - Пользователь
+Введение
+Информация о пользователе
+Введение¶
+Информация о текущем пользователе
+Информация о пользователе¶
+Запрос:
+GET https://api.service-kp.com/v1/user
+Ответ:
+HTTP/1.1 200 OK
+Content-Type: application/json
+[
+    'status': 200,
+    'user': {
+        'username': 'lalala',
+        'reg_date': '1235345666',
+        'subscription': {
+            'active': true,
+            'end_time': 12356456456,
+            'days': 3.5
+        },
+        'profile': {
+            'name': 'Ivan ivanov',
+            'avatar': 'http://gravatar.com/avatar/adasd2fr3495igjfiug',
+        }
+    }
+]
+  Table of Contents
+API - Пользователь
+Введение
+Информация о пользователе
+  Previous topic
+  Ошибки
+  Next topic
+  API - видео контент
+    This Page
+      Show Source
+  Quick search
+      Navigation
+          index
+          next |
+          previous |
+        API 1.3 3 documentation »
+        API - Пользователь 
+        © Copyright 2015, k.
+      Created using Sphinx 3.2.1.

@@ -1,0 +1,113 @@
+
+Справочники¶
+Содержание
+Справочники
+Список локаций сервера
+Список типов стриминга
+Список типов переводов
+Список авторов озвучек/переводов
+Список качеств видео
+Список локаций сервера¶
+Запрос:
+GET https://api.service-kp.com/v1/references/server-location
+HTTP/1.1 200 OK
+Content-Type: application/json
+{
+  'status': 200,
+  'items': [
+     {
+        'id': 1,
+        'location': 'de',
+        'name': 'Германия',
+     }
+  ],
+}
+Список типов стриминга¶
+Запрос:
+GET https://api.service-kp.com/v1/references/streaming-type
+HTTP/1.1 200 OK
+Content-Type: application/json
+{
+  'status': 200,
+  'items': [
+     {
+        'id': 1,
+        'code': 'hls4',
+        'name': 'HLS4',
+        'description': 'Description'
+     }
+  ],
+}
+Список типов переводов¶
+Запрос:
+GET https://api.service-kp.com/v1/references/voiceover-type
+HTTP/1.1 200 OK
+Content-Type: application/json
+{
+  'status': 200,
+  'items': [
+     {
+        "id": 1,
+        "title": "Дубляж",
+        "short_title": "DUB"
+     },
+  ],
+}
+Список авторов озвучек/переводов¶
+Запрос:
+GET https://api.service-kp.com/v1/references/voiceover-author
+HTTP/1.1 200 OK
+Content-Type: application/json
+{
+  'status': 200,
+  'items': [
+     {
+        "id": 1,
+        "title": "Видеосервис",
+        "short_title": null
+     },
+  ],
+}
+Список качеств видео¶
+Запрос:
+GET https://api.service-kp.com/v1/references/video-quality
+HTTP/1.1 200 OK
+Content-Type: application/json
+{
+  'status': 200,
+  'items': [
+     {
+        "id": 1,
+        "title": "480p",
+        "quality": 480,
+     },
+     {
+        "id": 2,
+        "title": "720p",
+        "quality": 720,
+     },
+  ],
+}
+  Table of Contents
+Справочники
+Список локаций сервера
+Список типов стриминга
+Список типов переводов
+Список авторов озвучек/переводов
+Список качеств видео
+  Previous topic
+  Введение
+  Next topic
+  Устройства
+    This Page
+      Show Source
+  Quick search
+      Navigation
+          index
+          next |
+          previous |
+        API 1.3 3 documentation »
+          API - видео контент »
+        Справочники 
+        © Copyright 2015, k.
+      Created using Sphinx 3.2.1.

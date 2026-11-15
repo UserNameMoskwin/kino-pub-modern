@@ -1,0 +1,25 @@
+
+Введение¶
+Прежде чем осуществлять запросы к API требуется пройти аутентификацию.
+Получив access_token к каждому запросу API требуется добавлять GET параметр access_token=<полученный токен>
+Для всех запросов желательно включить cookie, в них передается csrf токен, без него POST запросы не будут
+проходить проверку.
+Параметры запросов заключенные в::
+[] - необязательные
+<> - обязательные
+  Previous topic
+  API - видео контент
+  Next topic
+  Справочники
+    This Page
+      Show Source
+  Quick search
+      Navigation
+          index
+          next |
+          previous |
+        API 1.3 3 documentation »
+          API - видео контент »
+        Введение 
+        © Copyright 2015, k.
+      Created using Sphinx 3.2.1.

@@ -1,0 +1,104 @@
+
+Аутентификация¶
+Содержание
+Аутентификация
+Шаги аутентификации
+Получение device_code
+Ожидание подтверждения
+Получение access_token
+Обновление access_token
+Ошибки
+Шаги аутентификации¶
+Для аутентификации используется OpenAuth DeviceFlow https://tools.ietf.org/html/draft-ietf-oauth-v2-05#section-3.7
+Для получения client_id и client_secret пишите на support@kino.pub
+После получения access_token желательно сразу отсылать запрос на /device/notify
+Шаги аутентификации:
+Получение device_code
+Ожидание подтверждения
+Получения access token
+Получение device_code¶
+Получение device code:
+POST https://api.service-kp.com/oauth2/device?grant_type=device_code&client_id=myclient&client_secret=mysecret
+HTTP/1.1 200 OK
+Content-Type: application/json
+Cache-Control: no-store
+{
+    'code': 'ab23lcdefg340g0jgfgji45jb', //код, для дальнейшего получения access token'a
+    'user_code': 'ASDFGH', //Код который нужно показать пользователю
+    'verification_uri': 'https://kino.pub/device', //URL где нужно ввести пользовательский код
+    'expires_in': 8600, //Через сколько данный device_code
+    'interval': 5 // Интервал в секундах, через который посылать запросы на проверку активации
+}
+Ожидание подтверждения¶
+После получения device_code требуется запрашивать подтверждение активации, не чаще чем каждые N секунд (поле interval из первого запроса)
+Пример:
+POST https://api.service-kp.com/oauth2/device?grant_type=device_token&client_id=myclient&client_secret=mysecret&code='abcdefg'
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Cache-Control: no-store
+{
+  "error":"authorization_pending"
+}
+Если вернулся ответ с HTTP статусом 200, значит клиент активировал устройство, аутентификация прошла успешно. Смотрите Получение access_token
+Получение access_token¶
+После получения access_token можно смело пользоваться API
+Пример:
+POST https://api.service-kp.com/oauth2/device?grant_type=device_token&client_id=myclient&client_secret=mysecret&code='abcdefg'
+HTTP/1.1 200 OK
+Content-Type: application/json
+Cache-Control: no-store
+{
+    'access_token': 'asdfghjkl123456789', // токен, который требуется для обращения к API
+    'token_type': 'bearer',
+    'expires_in': 3600,
+    'refresh_token': 'qwertyu12345678' // токен, с помощью которого можно получать access_token без получения device_code
+    'scope': null // пока не используем
+}
+Обновление access_token¶
+Если срок действия access_token подходит к концу его можно обновить при помощи refresh_token, который валиден 30 дней.
+После обновления все старые токены становятся недействительными.
+Пример:
+POST https://api.service-kp.com/oauth2/token?grant_type=refresh_token&client_id=myclient&client_secret=mysecret&refresh_token='qwertyu12345678'
+HTTP/1.1 200 OK
+Content-Type: application/json
+Cache-Control: no-store
+{
+    'access_token': 'asdfghjkl123456789', // Новый access_token
+    'token_type': 'bearer',
+    'expires_in': 3600,
+    'refresh_token': 'qwertyu12345678' // Новый refresh_token,
+}
+Ошибки¶
+Все ошибки, кроме “error”:”authorization_pending” являются критичными и свидетельствуют о каких-либо неполадках.
+Пример:
+POST https://api.service-kp.com/oauth2/device?grant_type=device_code&client_id=wrongclient&client_secret=mysecret
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Cache-Control: no-store
+{
+  "error":"invalid_client",
+  "error_description":"The client credentials are invalid"
+}
+  Table of Contents
+Аутентификация
+Шаги аутентификации
+Получение device_code
+Ожидание подтверждения
+Получение access_token
+Обновление access_token
+Ошибки
+  Previous topic
+  Лог изменений
+  Next topic
+  Ошибки
+    This Page
+      Show Source
+  Quick search
+      Navigation
+          index
+          next |
+          previous |
+        API 1.3 3 documentation »
+        Аутентификация 
+        © Copyright 2015, k.
+      Created using Sphinx 3.2.1.

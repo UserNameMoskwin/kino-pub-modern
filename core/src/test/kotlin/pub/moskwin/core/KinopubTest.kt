@@ -1,0 +1,144 @@
+package pub.moskwin.core
+
+import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.SocketPolicy
+import kotlin.test.AfterTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+class KinopubTest {
+    private val servers = mutableListOf<MockWebServer>()
+    private var clock = 1_000L
+    private val creds = ClientCredentials("cid", "csecret")
+
+    private fun server() = MockWebServer().also { it.start(); servers += it }
+    private fun json(body: String, code: Int = 200) =
+        MockResponse().setResponseCode(code).setHeader("Content-Type", "application/json").setBody(body)
+
+    private fun client(store: TokenStore, vararg bases: String) =
+        Kinopub(creds, store, Hosts(bases.toList()), now = { clock }, retryDelayMs = 1)
+
+    private fun MockWebServer.base(prefix: String = "") = url(prefix).toString()
+
+    @AfterTest fun tearDown() = servers.forEach { runCatching { it.shutdown() } }
+
+    @Test fun `device flow stores tokens and keeps api prefix`() = runTest {
+        val s = server()
+        s.enqueue(json("""{"code":"dc","user_code":"ABCDEF","verification_uri":"https://kino.pub/device","expires_in":300,"interval":5}"""))
+        s.enqueue(json("""{"error":"authorization_pending"}""", 400))
+        s.enqueue(json("""{"access_token":"a1","refresh_token":"r1","expires_in":3600,"token_type":"bearer"}"""))
+        val store = InMemoryTokenStore()
+        val kp = client(store, s.base("/api"))
+
+        val code = kp.auth.requestDeviceCode()
+        assertEquals("ABCDEF", code.userCode)
+        assertFalse(kp.auth.pollOnce(code))
+        assertTrue(kp.auth.pollOnce(code))
+        assertEquals(Tokens("a1", "r1", 4_600), store.load())
+
+        val first = s.takeRequest()
+        assertEquals("/api/oauth2/device", first.path)
+        assertEquals("grant_type=device_code&client_id=cid&client_secret=csecret", first.body.readUtf8())
+        s.takeRequest()
+        assertTrue(s.takeRequest().body.readUtf8().contains("grant_type=device_token") )
+    }
+
+    @Test fun `fatal device flow error is thrown`() = runTest {
+        val s = server()
+        s.enqueue(json("""{"error":"invalid_client","error_description":"The client credentials are invalid"}""", 400))
+        val e = assertFailsWith<ApiException> { client(InMemoryTokenStore(), s.base()).auth.requestDeviceCode() }
+        assertEquals("invalid_client", e.error)
+    }
+
+    @Test fun `falls over to next host and remembers it`() = runTest {
+        val dead = server().also { it.shutdown() }
+        val bad = server()
+        val good = server()
+        bad.enqueue(json("gateway", 502))
+        good.enqueue(json("""{"status":200,"user":{"username":"u"}}"""))
+        good.enqueue(json("""{"status":200}"""))
+        val kp = client(InMemoryTokenStore(Tokens("a", "r", 9_999)), dead.base(), bad.base(), good.base("/api"))
+
+        kp.get("user")
+        assertEquals(2, kp.hosts.currentIndex)
+        kp.get("types")
+        assertEquals(1, bad.requestCount)
+        assertEquals("/api/v1/user", good.takeRequest().path)
+        assertEquals("Bearer a", good.takeRequest().getHeader("Authorization"))
+    }
+
+    @Test fun `all hosts down reports no host available`() = runTest {
+        val dead = server().also { it.shutdown() }
+        val kp = client(InMemoryTokenStore(Tokens("a", "r", 9_999)), dead.base())
+        assertFailsWith<NoHostAvailableException> { kp.get("user") }
+    }
+
+    @Test fun `expired token is refreshed before the request`() = runTest {
+        val s = server()
+        s.enqueue(json("""{"access_token":"a2","refresh_token":"r2","expires_in":3600}"""))
+        s.enqueue(json("""{"status":200}"""))
+        val store = InMemoryTokenStore(Tokens("a1", "r1", expiresAt = 1_030))
+        client(store, s.base()).get("user")
+
+        assertEquals("/oauth2/token", s.takeRequest().path)
+        assertEquals("Bearer a2", s.takeRequest().getHeader("Authorization"))
+        assertEquals(Tokens("a2", "r2", 4_600), store.load())
+    }
+
+    @Test fun `401 triggers one refresh and retry`() = runTest {
+        val s = server()
+        s.enqueue(json("""{"status":401,"name":"Unauthorized"}""", 401))
+        s.enqueue(json("""{"access_token":"a2","refresh_token":"r2","expires_in":3600}"""))
+        s.enqueue(json("""{"status":200,"ok":1}"""))
+        val store = InMemoryTokenStore(Tokens("a1", "r1", 9_999))
+        val result = client(store, s.base()).get("user")
+
+        assertEquals("1", result["ok"]!!.jsonPrimitive.content)
+        assertEquals(3, s.requestCount)
+        assertEquals("r2", store.load()!!.refreshToken)
+    }
+
+    @Test fun `rejected refresh logs out`() = runTest {
+        val s = server()
+        s.enqueue(json("""{"error":"invalid_grant"}""", 400))
+        val store = InMemoryTokenStore(Tokens("a1", "r1", expiresAt = 0))
+        assertFailsWith<LoginRequiredException> { client(store, s.base()).get("user") }
+        assertNull(store.load())
+    }
+
+    @Test fun `network failure during refresh keeps the session`() = runTest {
+        val s = server()
+        s.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START))
+        val other = server()
+        val tokens = Tokens("a1", "r1", expiresAt = 0)
+        val store = InMemoryTokenStore(tokens)
+        assertFailsWith<java.io.IOException> { client(store, s.base(), other.base()).get("user") }
+        assertEquals(tokens, store.load())
+        assertEquals(0, other.requestCount)
+    }
+
+    @Test fun `429 is retried`() = runTest {
+        val s = server()
+        s.enqueue(json("{}", 429))
+        s.enqueue(json("""{"status":200}"""))
+        client(InMemoryTokenStore(Tokens("a", "r", 9_999)), s.base()).get("items")
+        assertEquals(2, s.requestCount)
+    }
+
+    @Test fun `toggle is sent once and only to the current host`() = runTest {
+        val bad = server()
+        val other = server()
+        bad.enqueue(json("gateway", 503))
+        val kp = client(InMemoryTokenStore(Tokens("a", "r", 9_999)), bad.base(), other.base())
+        assertFailsWith<java.io.IOException> { kp.get("watching/togglewatchlist", mapOf("id" to "1"), failover = false) }
+        assertEquals(1, bad.requestCount)
+        assertEquals(0, other.requestCount)
+    }
+}
