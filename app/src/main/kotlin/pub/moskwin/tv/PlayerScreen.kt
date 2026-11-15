@@ -181,7 +181,10 @@ internal fun PlayerScreen(
             }
         }
         builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, textGroup == null)
-        if (textGroup != null) builder.setOverrideForType(TrackSelectionOverride(textGroup.mediaTrackGroup, 0))
+        // Обычно дорожка уже выбрана как дорожка по умолчанию; трогаем выбор, только если это не так.
+        if (textGroup != null && !textGroup.isSelected) {
+            builder.setOverrideForType(TrackSelectionOverride(textGroup.mediaTrackGroup, 0))
+        }
         // Качество: авто — адаптивно без ограничений, иначе не выше выбранной высоты.
         builder.clearOverridesOfType(C.TRACK_TYPE_VIDEO)
         if (quality > 0) builder.setMaxVideoSize(Int.MAX_VALUE, quality) else builder.clearVideoSizeConstraints()
@@ -222,13 +225,25 @@ internal fun PlayerScreen(
                 audio = pick.audio
                 subtitle = pick.subtitle
             }
+            // К потоку подключается только выбранная дорожка субтитров, сразу и как дорожка
+            // по умолчанию. Если подключить все и включить нужную уже после старта, Media3 1.5
+            // падает с IllegalStateException в ProgressiveMediaPeriod, когда фильм идёт с начала.
+            // Заодно не тратится время на подготовку остальных файлов.
+            val chosen = subtitle?.let { i -> loaded.subtitles.getOrNull(i)?.let { s -> s.url?.let { Triple(i, s, it) } } }
             val item = MediaItem.Builder().setUri(url).setSubtitleConfigurations(
-                loaded.subtitles.mapIndexedNotNull { i, s ->
-                    val address = s.url ?: return@mapIndexedNotNull null
-                    MediaItem.SubtitleConfiguration.Builder(Uri.parse(address))
-                        .setMimeType(MimeTypes.APPLICATION_SUBRIP).setLanguage(s.lang).setId("api:$i").build()
-                },
+                listOfNotNull(
+                    chosen?.let { (i, s, address) ->
+                        MediaItem.SubtitleConfiguration.Builder(Uri.parse(address))
+                            .setMimeType(MimeTypes.APPLICATION_SUBRIP).setLanguage(s.lang).setId("api:$i")
+                            .setSelectionFlags(C.SELECTION_FLAG_DEFAULT).build()
+                    },
+                ),
             ).build()
+            // Субтитры из самого плейлиста не используются, поэтому без выбранной дорожки текст выключен.
+            player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, chosen == null)
+                .build()
             tracks = Tracks.EMPTY
             // Играть начинаем после выбора дорожек, чтобы не прозвучала не та озвучка.
             player.playWhenReady = false
@@ -446,7 +461,10 @@ internal fun PlayerScreen(
                         }
                         links?.subtitles?.forEachIndexed { i, s ->
                             if (s.url != null) PanelItem(s.title, null, first = subtitle == i, marked = subtitle == i) {
-                                subtitle = i; applySelection(); rememberChoice(); close()
+                                // Другая дорожка — другой файл в потоке: поток собирается заново с той же секунды.
+                                val changed = subtitle != i
+                                subtitle = i; rememberChoice(); close()
+                                if (changed) reload++
                             }
                         }
                     }
