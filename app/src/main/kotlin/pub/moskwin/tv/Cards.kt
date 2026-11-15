@@ -88,17 +88,23 @@ internal fun MediaCard(
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (focused) 1.06f else 1f, tween(120), label = "focus")
     Column(modifier.width(width)) {
+        // Фокус принимает внешняя рамка неизменного размера, а увеличивается только
+        // содержимое внутри неё. Иначе прокрутка, которая ставит карточку в фокусе на
+        // опорную точку, видит меняющиеся во время анимации границы и дёргает весь экран.
         Box(
             Modifier
                 .size(width, height)
+                .onFocusChanged { focused = it.isFocused }
+                .clickable(interactionSource = null, indication = null, onClick = onClick),
+        ) { Box(
+            Modifier
+                .fillMaxSize()
                 .graphicsLayer {
                     scaleX = scale
                     scaleY = scale
                     shape = CardShape
                     clip = true
                 }
-                .onFocusChanged { focused = it.isFocused }
-                .clickable(interactionSource = null, indication = null, onClick = onClick)
                 .background(Color(0xFF242424))
                 .drawWithContent {
                     drawContent()
@@ -125,7 +131,7 @@ internal fun MediaCard(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
-        }
+        } }
         Text(
             title,
             style = MaterialTheme.typography.bodyMedium,
