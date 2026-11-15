@@ -90,6 +90,21 @@ class Kinopub(
         )
     }
 
+    /** Ссылки на видео и субтитры для серии или фильма ([mediaId] — `Video.id`). */
+    suspend fun mediaLinks(mediaId: Int): MediaLinks =
+        LenientJson.decodeFromJsonElement(MediaLinks.serializer(), get("items/media-links", mapOf("mid" to "$mediaId")))
+
+    /**
+     * Запоминает, на какой секунде остановились. [video] — номер серии (у фильма 1),
+     * [season] — номер сезона, у фильмов не передаётся.
+     */
+    suspend fun markTime(itemId: Int, video: Int, season: Int?, seconds: Int) {
+        get(
+            "watching/marktime",
+            mapOf("id" to "$itemId", "video" to "$video", "time" to "$seconds", "season" to season?.takeIf { it > 0 }?.toString()),
+        )
+    }
+
     /** Поиск по названию, режиссёру и актёрам. Сервер требует не меньше трёх символов. */
     suspend fun search(query: String): List<Item> =
         get("items/search", mapOf("q" to query, "perpage" to "40")).list("items")

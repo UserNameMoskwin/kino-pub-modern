@@ -129,6 +129,7 @@ data class Video(
     val thumbnail: String? = null,
     val duration: Double = 0.0,
     val watching: Watching = Watching(),
+    val audios: List<MediaAudio> = emptyList(),
 ) {
     val watched: Boolean get() = watching.status == 1
     val progress: Float
@@ -200,4 +201,95 @@ data class Details(
         val last = all.indexOfLast { it.watched }
         return all.getOrNull(last + 1) ?: all.firstOrNull()
     }
+}
+
+/** Справочная пара «номер — название»: тип озвучки, автор перевода. */
+@Serializable
+data class NamedRef(val id: Int = 0, val title: String = "")
+
+/** Дорожка озвучки. [index] совпадает с номером в названии дорожки HLS4-плейлиста («08. Оригинал (ENG)»). */
+@Serializable
+data class MediaAudio(
+    val index: Int = 0,
+    val codec: String = "",
+    val channels: Int = 0,
+    val lang: String = "",
+    val type: NamedRef? = null,
+    val author: NamedRef? = null,
+) {
+    /** У дорожек без типа он не указан сервисом; нерусская такая дорожка — оригинал. */
+    val kind: AudioKind
+        get() = when (type?.title) {
+            "Оригинал" -> AudioKind.ORIGINAL
+            "Дубляж" -> AudioKind.DUB
+            null -> if (lang == "rus") AudioKind.VOICEOVER else AudioKind.ORIGINAL
+            else -> AudioKind.VOICEOVER
+        }
+
+    /** По этой строке запоминается ручной выбор озвучки для сериала. */
+    val signature: String get() = "$lang|${type?.id}|${author?.id}"
+
+    val title: String
+        get() = listOfNotNull(type?.title ?: "Оригинал", author?.title?.ifBlank { null }).joinToString(" · ") +
+            " (${lang.uppercase()})" + (if (codec == "ac3") " AC3" else "") + (if (channels > 2) " 5.1" else "")
+}
+
+@Serializable
+data class MediaSubtitle(val lang: String = "", val forced: Boolean = false, val url: String? = null) {
+    val signature: String get() = "$lang|$forced"
+    val title: String get() = lang.uppercase() + if (forced) " (только надписи)" else ""
+}
+
+@Serializable
+data class MediaUrls(val http: String? = null, val hls: String? = null, val hls2: String? = null, val hls4: String? = null)
+
+@Serializable
+data class MediaFile(val quality: String = "", val h: Int = 0, val codec: String = "", val url: MediaUrls = MediaUrls())
+
+/** Ответ `items/media-links`: ссылки действуют ограниченное время и зависят от выбранного сервера. */
+@Serializable
+data class MediaLinks(val files: List<MediaFile> = emptyList(), val subtitles: List<MediaSubtitle> = emptyList()) {
+    /** Адрес потока для типа из настроек устройства («HLS4», «HLS2», «HLS», «HTTP»); по умолчанию HLS4. */
+    fun streamUrl(streamType: String?): String? {
+        val best = files.maxByOrNull { it.h }?.url ?: return null
+        return when (streamType?.uppercase()) {
+            "HTTP" -> best.http
+            "HLS" -> best.hls
+            "HLS2" -> best.hls2
+            else -> null
+        } ?: best.hls4 ?: best.hls2 ?: best.hls ?: best.http
+    }
+}
+
+/** Выбранные дорожки: [subtitle] — номер в списке субтитров, null — выключены. */
+data class TrackPick(val audio: MediaAudio?, val subtitle: Int?)
+
+/**
+ * Дорожки для запуска видео. Ручной выбор для этого сериала ([savedAudio], [savedSubtitle] —
+ * подписи дорожек, для выключенных субтитров `off`) сильнее правила из docs/spec.md;
+ * если такой дорожки в серии нет, действует правило. [preferAc3] — настройка плеера.
+ */
+fun pickTracks(
+    audios: List<MediaAudio>,
+    subtitles: List<MediaSubtitle>,
+    kids: Boolean,
+    preferAc3: Boolean = false,
+    savedAudio: String? = null,
+    savedSubtitle: String? = null,
+): TrackPick {
+    // Из одинаковых по смыслу дорожек первой идёт AC3 или, наоборот, обычная.
+    val ordered = audios.sortedBy { (it.codec == "ac3") != preferAc3 }
+    val rule = defaultTracks(
+        ordered.map { AudioTrack(it.index, it.lang, it.kind) },
+        subtitles.mapIndexed { i, s -> SubtitleTrack(i, s.lang, s.forced) },
+        kids,
+    )
+    val saved = savedAudio?.let { signature -> ordered.firstOrNull { it.signature == signature } }
+    val audio = saved ?: ordered.firstOrNull { it.index == rule.audio }
+    val subtitle = when {
+        saved == null || savedSubtitle == null -> rule.subtitle
+        savedSubtitle == "off" -> null
+        else -> subtitles.indexOfFirst { it.signature == savedSubtitle }.takeIf { it >= 0 }
+    }
+    return TrackPick(audio, subtitle)
 }

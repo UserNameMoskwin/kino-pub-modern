@@ -94,6 +94,40 @@ class HomeTest {
         assertEquals(1 to 0, card.resumePoint(marks(1 to 5L, 1 to 9L, 1 to 8L, 1 to 30L))?.let { it.number to it.snumber })
     }
 
+    private fun audio(index: Int, lang: String, type: String?, author: Int? = null, codec: String = "aac") =
+        MediaAudio(index, codec, 6, lang, type?.let { NamedRef(it.hashCode(), it) }, author?.let { NamedRef(it, "a$it") })
+
+    private val odyssey = listOf(
+        audio(1, "rus", "Многоголосый", 15), audio(2, "rus", "Дубляж", 3), audio(8, "eng", "Оригинал"),
+        audio(9, "rus", "Многоголосый", 15, codec = "ac3"),
+    )
+    private val subs = listOf(MediaSubtitle("eng"), MediaSubtitle("rus", forced = true), MediaSubtitle("rus"))
+
+    @Test fun `adults get the original with russian subtitles, kids get the dub`() {
+        assertEquals(8 to 2, pickTracks(odyssey, subs, kids = false).let { it.audio?.index to it.subtitle })
+        assertEquals(2 to null, pickTracks(odyssey, subs, kids = true).let { it.audio?.index to it.subtitle })
+        // Русских субтитров нет — русская озвучка: дубляж, если есть.
+        assertEquals(2 to null, pickTracks(odyssey, listOf(MediaSubtitle("eng")), kids = false).let { it.audio?.index to it.subtitle })
+    }
+
+    @Test fun `manual choice for the serial wins, and falls back to the rule when the track is missing`() {
+        val voiceover = odyssey[0].signature
+        assertEquals(1 to null, pickTracks(odyssey, subs, false, savedAudio = voiceover, savedSubtitle = "off").let { it.audio?.index to it.subtitle })
+        assertEquals(1 to 0, pickTracks(odyssey, subs, false, savedAudio = voiceover, savedSubtitle = "eng|false").let { it.audio?.index to it.subtitle })
+        assertEquals(9, pickTracks(odyssey, subs, false, preferAc3 = true, savedAudio = voiceover, savedSubtitle = "off").audio?.index)
+        assertEquals(8 to 2, pickTracks(odyssey, subs, false, savedAudio = "jpn|1|1", savedSubtitle = "off").let { it.audio?.index to it.subtitle })
+    }
+
+    @Test fun `untyped foreign track counts as the original and stream type picks the url`() {
+        assertEquals(AudioKind.ORIGINAL, audio(1, "eng", null).kind)
+        assertEquals(AudioKind.VOICEOVER, audio(1, "rus", null).kind)
+        val links = MediaLinks(listOf(MediaFile("480p", 406, url = MediaUrls("h0", "l0", "l20", "l40")), MediaFile("2160p", 2160, url = MediaUrls("h", "l", "l2", "l4"))))
+        assertEquals("l4", links.streamUrl("HLS4"))
+        assertEquals("l4", links.streamUrl(null))
+        assertEquals("h", links.streamUrl("http"))
+        assertEquals("l2", links.streamUrl("HLS2"))
+    }
+
     @Test fun `live history row decodes`() {
         val json = """{"time":437,"counter":0,"first_seen":1,"last_seen":1794757699,
             "item":{"id":63673,"type":"serial","subtype":"","title":"Блуи / Bluey","year":2019,"voice":null,

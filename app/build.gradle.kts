@@ -62,4 +62,8 @@ dependencies {
     implementation("androidx.tv:tv-material:1.0.0")
     // Обложки: кэш на диске, загрузка в размере карточки.
     implementation("io.coil-kt:coil-compose:2.7.0")
+    // Плеер: ExoPlayer с HLS; из media3-ui берётся только поверхность с субтитрами.
+    implementation("androidx.media3:media3-exoplayer:1.5.1")
+    implementation("androidx.media3:media3-exoplayer-hls:1.5.1")
+    implementation("androidx.media3:media3-ui:1.5.1")
 }

@@ -222,11 +222,6 @@ internal fun SettingsScreen(
             }
 
             Header("Настройки плеера")
-            Text(
-                "Плеер ещё не сделан: эти настройки сохраняются и начнут действовать вместе с ним.",
-                color = Dim, style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(horizontal = Edge, vertical = 6.dp),
-            )
             row("player", "Выбор плеера", if (settings.askPlayer) "Спрашивать при запуске" else "Встроенный") {
                 dialog = Dialog.Choice(
                     "Выберите плеер", listOf("builtin" to "Встроенный", "ask" to "Спрашивать при запуске"),
@@ -285,7 +280,7 @@ private fun Header(title: String) {
 
 /** Строка настроек: название, под ним значение, справа галочка у переключателей. */
 @Composable
-private fun SettingRow(
+internal fun SettingRow(
     title: String,
     value: String?,
     checked: Boolean?,

@@ -110,6 +110,7 @@ private sealed interface Screen {
     class Search(val memory: SearchMemory = SearchMemory()) : Screen
     class Card(val itemId: Int) : Screen
     data object Settings : Screen
+    class Player(val request: PlayRequest) : Screen
 }
 
 /** Главный экран и стопка открытых поверх него: поиск, карточки, настройки. «Назад» снимает верхний. */
@@ -130,6 +131,7 @@ private fun Screens(kinopub: Kinopub, settings: AppSettings, resumes: Int, onLog
         is Screen.Search -> "search"
         is Screen.Card -> "card"
         Screen.Settings -> "settings"
+        is Screen.Player -> "player"
     }
     SideEffect { Perf.screen = screenName }
 
@@ -161,8 +163,10 @@ private fun Screens(kinopub: Kinopub, settings: AppSettings, resumes: Int, onLog
                     notKidsStore.save(notKids)
                 },
                 onKidsChanged = { kidsEdits++ },
+                onPlay = { stack += Screen.Player(it) },
                 onLoginRequired = onLoginRequired,
             )
+            is Screen.Player -> PlayerScreen(kinopub, settings, top.request, onExit = { stack.remove(top) })
             Screen.Settings -> SettingsScreen(
                 kinopub, settings,
                 onChanged = { kidsEdits++ },

@@ -44,11 +44,13 @@ import pub.moskwin.core.Kinopub
 import pub.moskwin.core.LoginRequiredException
 import pub.moskwin.core.Video
 import pub.moskwin.core.isInKidsFolder
+import pub.moskwin.core.isKids
 import pub.moskwin.core.setInKidsFolder
 import kotlin.math.roundToInt
 
 /**
  * Карточка фильма или сериала: описание, «Смотреть», детские кнопки, сезоны и серии.
+ * [onPlay] запускает плеер с выбранной серией.
  * [onKidsChanged] сообщает, что состав детского изменился и главный экран надо пересобрать.
  */
 @Composable
@@ -58,6 +60,7 @@ internal fun DetailsScreen(
     notKids: Set<Int>,
     onNotKids: (Int, Boolean) -> Unit,
     onKidsChanged: () -> Unit,
+    onPlay: (PlayRequest) -> Unit,
     onLoginRequired: () -> Unit,
 ) {
     var details by remember { mutableStateOf<Details?>(null) }
@@ -86,7 +89,7 @@ internal fun DetailsScreen(
 
     val loaded = details
     when {
-        loaded != null -> Loaded(kinopub, loaded, resume, notKids, onNotKids, onKidsChanged)
+        loaded != null -> Loaded(kinopub, loaded, resume, notKids, onNotKids, onKidsChanged, onPlay)
         error != null -> Centered {
             Text("Не удалось открыть: $error", style = MaterialTheme.typography.titleMedium)
             Button(onClick = { attempt++ }) { Text("Повторить") }
@@ -103,6 +106,7 @@ private fun Loaded(
     notKids: Set<Int>,
     onNotKids: (Int, Boolean) -> Unit,
     onKidsChanged: () -> Unit,
+    onPlay: (PlayRequest) -> Unit,
 ) {
     val item = details.item
     val scope = rememberCoroutineScope()
@@ -118,8 +122,14 @@ private fun Loaded(
         runCatching { playFocus.requestFocus() }
         inKidsFolder = runCatching { isInKidsFolder(kinopub, item.id) }.getOrNull()
     }
-    // Плеер — шаг 4.
-    val play = { _: Video? -> notice = "Плеер появится на следующем шаге" }
+    val play = { chosen: Video? ->
+        (chosen ?: details.allVideos.firstOrNull())?.let { video ->
+            // Детское — по тем же признакам, что и на главном экране: от этого зависят озвучка и субтитры.
+            val kids = isKids(item.isCartoon, item.isAnime, inKidsFolder == true, item.id in notKids)
+            onPlay(PlayRequest(details, video, kids))
+        }
+        Unit
+    }
 
     Box(Modifier.fillMaxSize()) {
         AsyncImage(
