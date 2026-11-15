@@ -3,6 +3,7 @@ package pub.moskwin.tv
 import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -27,7 +28,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -67,6 +75,8 @@ internal fun HomeScreen(
     focus: FocusMemory,
     onOpen: (Int) -> Unit,
     onSearch: () -> Unit,
+    onCatalog: () -> Unit,
+    onProfile: () -> Unit,
     onSettings: () -> Unit,
     onLoginRequired: () -> Unit,
 ) {
@@ -104,15 +114,41 @@ internal fun HomeScreen(
             Perf.homeShown(fromCache)
         }
     }
-    Column(Modifier.fillMaxSize()) {
-        TopBar(kinopub, home?.device, focus, onSearch, onSettings, onChanged = { reload++ })
-        when {
-            home != null -> Rows(home, focus, onOpen)
-            error != null -> Centered {
-                Text("Не удалось загрузить: $error", style = MaterialTheme.typography.titleMedium)
-                Button(onClick = { error = null; reload++ }) { Text("Повторить") }
+    var menuOpen by remember { mutableStateOf(false) }
+    var menuWasOpen by remember { mutableStateOf(false) }
+    val menuButton = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    // Меню закрыли без перехода — фокус возвращается на кнопку меню.
+    LaunchedEffect(menuOpen) {
+        if (menuOpen) menuWasOpen = true
+        else if (menuWasOpen) runCatching { menuButton.requestFocus() }
+    }
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+            TopBar(home?.device, focus, menuButton, onMenu = { menuOpen = true }, onSearch = onSearch)
+            when {
+                // «Влево» с крайней левой карточки открывает меню: дальше двигаться некуда.
+                home != null -> Box(
+                    Modifier.onKeyEvent { event ->
+                        if (event.key != Key.DirectionLeft || event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                        if (!focusManager.moveFocus(FocusDirection.Left)) menuOpen = true
+                        true
+                    },
+                ) { Rows(home, focus, onOpen) }
+                error != null -> Centered {
+                    Text("Не удалось загрузить: $error", style = MaterialTheme.typography.titleMedium)
+                    Button(onClick = { error = null; reload++ }) { Text("Повторить") }
+                }
+                else -> Centered { Text("Загрузка…", style = MaterialTheme.typography.titleLarge, color = Dim) }
             }
-            else -> Centered { Text("Загрузка…", style = MaterialTheme.typography.titleLarge, color = Dim) }
+        }
+        if (menuOpen) {
+            Menu(
+                kinopub, home?.device,
+                onClose = { menuOpen = false },
+                onProfile = onProfile, onCatalog = onCatalog, onSearch = onSearch, onSettings = onSettings,
+                onServerChanged = { reload++ },
+            )
         }
     }
 }
@@ -126,79 +162,62 @@ internal fun Centered(content: @Composable () -> Unit) {
     ) { content() }
 }
 
-/** Поиск и текущий сервер. Нажатие на сервер раскрывает список, второе — выбирает. */
+/** Шапка: кнопки меню и поиска, справа — текущий сервер. Сам переключатель сервера — в меню. */
 @Composable
-private fun TopBar(
-    kinopub: Kinopub,
-    device: Device?,
-    focus: FocusMemory,
-    onSearch: () -> Unit,
-    onSettings: () -> Unit,
-    onChanged: () -> Unit,
-) {
-    val scope = rememberCoroutineScope()
-    var expanded by remember { mutableStateOf(false) }
-    // Выбор показывается сразу, не дожидаясь ответа сервера.
-    var chosen by remember(device) { mutableStateOf(device?.servers?.firstOrNull { it.selected == 1 }?.id) }
-    val currentFocus = remember { FocusRequester() }
-    val chipFocus = remember { FocusRequester() }
-    var refocus by remember { mutableStateOf(false) }
-    // «Назад» сворачивает раскрытый список серверов, ничего не меняя.
-    BackHandler(enabled = expanded) {
-        expanded = false
-        refocus = true
-    }
-
+private fun TopBar(device: Device?, focus: FocusMemory, menuButton: FocusRequester, onMenu: () -> Unit, onSearch: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(start = Edge, end = Edge, top = 20.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("moskwin-pub", style = MaterialTheme.typography.titleMedium, color = Dim)
-        Spacer(Modifier.weight(1f))
+        Button(onClick = onMenu, modifier = Modifier.focusRequester(menuButton).restoresFocus(focus, "top:menu")) { Text("☰  Меню") }
         Button(onClick = onSearch, modifier = Modifier.restoresFocus(focus, "top:search")) { Text("Поиск") }
-        Button(onClick = onSettings, modifier = Modifier.restoresFocus(focus, "top:settings")) { Text("Настройки") }
+        Spacer(Modifier.weight(1f))
+        device?.servers?.firstOrNull { it.selected == 1 }?.let {
+            Text("Сервер: ${it.label}", style = MaterialTheme.typography.titleMedium, color = Dim)
+        }
+    }
+}
+
+/**
+ * Боковое меню: профиль, каталог, поиск, выбор сервера и настройки. Сервер меняется
+ * прямо здесь — открыть меню и нажать на нужный; остальные настройки на своём экране.
+ */
+@Composable
+private fun Menu(
+    kinopub: Kinopub,
+    device: Device?,
+    onClose: () -> Unit,
+    onProfile: () -> Unit,
+    onCatalog: () -> Unit,
+    onSearch: () -> Unit,
+    onSettings: () -> Unit,
+    onServerChanged: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    SidePanel(left = true, onClose = onClose, width = 360.dp) {
+        PanelRow("Профиль") { onClose(); onProfile() }
+        PanelRow("Каталог", focusFirst = true) { onClose(); onCatalog() }
+        PanelRow("Поиск") { onClose(); onSearch() }
         val servers = device?.servers.orEmpty()
-        if (servers.isEmpty()) {
-            // Список серверов ещё не получен.
-        } else if (!expanded) {
-            val label = servers.firstOrNull { it.id == chosen }?.label ?: "не выбран"
-            // Кнопка списка, на которой стоял фокус, исчезла — возвращаем его сюда.
-            LaunchedEffect(refocus) {
-                if (refocus) {
-                    runCatching { chipFocus.requestFocus() }
-                    refocus = false
+        if (servers.isNotEmpty()) {
+            Text(
+                "СЕРВЕР", color = Dim, style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(start = Edge, end = Edge, top = 20.dp, bottom = 6.dp),
+            )
+            servers.forEach { server ->
+                PanelRow(server.label, marked = server.selected == 1) {
+                    onClose()
+                    if (server.selected != 1) scope.launch {
+                        // Сбой переключения оставляет прежний сервер: главный экран перечитает настройки.
+                        runCatching { withContext(Dispatchers.Default) { kinopub.setServer(device!!.id, server.id) } }
+                        onServerChanged()
+                    }
                 }
             }
-            Button(onClick = { expanded = true }, modifier = Modifier.focusRequester(chipFocus)) { Text("Сервер: $label") }
-        } else {
-            LaunchedEffect(Unit) { runCatching { currentFocus.requestFocus() } }
-            servers.forEachIndexed { index, server ->
-                val current = server.id == chosen || (chosen == null && index == 0)
-                Button(
-                    onClick = {
-                        expanded = false
-                        refocus = true
-                        if (server.id != chosen) {
-                            val previous = chosen
-                            chosen = server.id
-                            scope.launch {
-                                try {
-                                    kinopub.setServer(device!!.id, server.id)
-                                    onChanged()
-                                } catch (e: CancellationException) {
-                                    throw e
-                                } catch (e: Exception) {
-                                    // Сервис выбор не принял — показываем прежний сервер.
-                                    chosen = previous
-                                }
-                            }
-                        }
-                    },
-                    modifier = if (current) Modifier.focusRequester(currentFocus) else Modifier,
-                ) { Text(if (server.id == chosen) "● ${server.label}" else server.label) }
-            }
+            Text("", modifier = Modifier.padding(top = 8.dp))
         }
+        PanelRow("Настройки") { onClose(); onSettings() }
     }
 }
 

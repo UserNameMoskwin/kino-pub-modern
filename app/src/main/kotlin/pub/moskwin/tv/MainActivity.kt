@@ -111,6 +111,8 @@ private sealed interface Screen {
     class Card(val itemId: Int) : Screen
     data object Settings : Screen
     class Player(val request: PlayRequest) : Screen
+    class Catalog(val memory: CatalogMemory = CatalogMemory()) : Screen
+    data object Profile : Screen
 }
 
 /** Главный экран и стопка открытых поверх него: поиск, карточки, настройки. «Назад» снимает верхний. */
@@ -132,6 +134,8 @@ private fun Screens(kinopub: Kinopub, settings: AppSettings, resumes: Int, onLog
         is Screen.Card -> "card"
         Screen.Settings -> "settings"
         is Screen.Player -> "player"
+        is Screen.Catalog -> "catalog"
+        Screen.Profile -> "profile"
     }
     SideEffect { Perf.screen = screenName }
 
@@ -143,6 +147,11 @@ private fun Screens(kinopub: Kinopub, settings: AppSettings, resumes: Int, onLog
                     kinopub, refreshKey = resumes + kidsEdits, notKids = notKids, hideAnime = settings.hideAnime,
                     focus = homeFocus,
                     onOpen = { stack += Screen.Card(it) },
+                    onCatalog = {
+                        states.removeState("catalog")
+                        stack += Screen.Catalog()
+                    },
+                    onProfile = { stack += Screen.Profile },
                     onSettings = { stack += Screen.Settings },
                     onSearch = {
                         // Новый поиск начинается с чистого экрана, без прокрутки прошлого.
@@ -166,6 +175,14 @@ private fun Screens(kinopub: Kinopub, settings: AppSettings, resumes: Int, onLog
                 onPlay = { stack += Screen.Player(it) },
                 onLoginRequired = onLoginRequired,
             )
+            is Screen.Catalog -> states.SaveableStateProvider("catalog") {
+                CatalogScreen(
+                    kinopub, top.memory, settings.hideAnime,
+                    onOpen = { stack += Screen.Card(it) },
+                    onLoginRequired = onLoginRequired,
+                )
+            }
+            Screen.Profile -> ProfileScreen(kinopub, settings, onLoggedOut = onLoginRequired)
             is Screen.Player -> PlayerScreen(kinopub, settings, top.request, onExit = { stack.remove(top) })
             Screen.Settings -> SettingsScreen(
                 kinopub, settings,

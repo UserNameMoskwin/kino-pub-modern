@@ -195,6 +195,17 @@ class KinopubTest {
         assertNull(result.problem)
     }
 
+    @Test fun `catalog sends only the chosen filters and reads page count`() = runTest {
+        val s = server()
+        s.enqueue(json("""{"status":200,"items":[{"id":7,"title":"А / A"}],"pagination":{"total":12,"current":2,"perpage":48,"total_items":560}}"""))
+        s.enqueue(json("""{"status":200,"user":{"username":"u","reg_date":5,"subscription":{"active":true,"end_time":9,"days":170.9}}}"""))
+        val kp = client(InMemoryTokenStore(Tokens("a", "r", 9_999)), s.base())
+        val page = kp.items(CatalogQuery(type = "serial", sort = "imdb_rating-", genre = 9, year = "2020-2023"), page = 2)
+        assertEquals("/v1/items?type=serial&sort=imdb_rating-&genre=9&year=2020-2023&page=2&perpage=48", s.takeRequest().path)
+        assertEquals(Triple(7, 12, 560), Triple(page.items.single().id, page.pages, page.total))
+        assertEquals(User("u", 5, Subscription(true, 9, 170.9)), kp.user())
+    }
+
     @Test fun `home rows decode from typed endpoints`() = runTest {
         val s = server()
         s.enqueue(json("""{"status":200,"device":{"id":5,"title":"ТВ","settings":{

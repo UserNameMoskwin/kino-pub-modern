@@ -90,6 +90,32 @@ class Kinopub(
         )
     }
 
+    /** Страница каталога с фильтрами и сортировкой. На странице не больше 50 записей. */
+    suspend fun items(query: CatalogQuery, page: Int = 1): ItemsPage {
+        val response = get(
+            "items",
+            mapOf(
+                "type" to query.type, "sort" to query.sort, "genre" to query.genre?.toString(),
+                "country" to query.country?.toString(), "year" to query.year,
+                "page" to "$page", "perpage" to "48",
+            ),
+        )
+        // В `pagination` поле total — число страниц, total_items — число записей.
+        val pagination = response["pagination"] as? JsonObject
+        fun number(key: String) = (pagination?.get(key) as? JsonPrimitive)?.intOrNull ?: 0
+        return ItemsPage(response.list("items"), number("total").coerceAtLeast(1), number("total_items"))
+    }
+
+    /** Разделы каталога. */
+    suspend fun types(): List<ContentType> = get("types").list("items")
+
+    /** Жанры раздела: у фильмов и, например, концертов они разные. */
+    suspend fun genres(type: String): List<Genre> = get("genres", mapOf("type" to type)).list("items")
+
+    suspend fun countries(): List<Country> = get("countries").list("items")
+
+    suspend fun user(): User = get("user").value("user") ?: User()
+
     /** Ссылки на видео и субтитры для серии или фильма ([mediaId] — `Video.id`). */
     suspend fun mediaLinks(mediaId: Int): MediaLinks =
         LenientJson.decodeFromJsonElement(MediaLinks.serializer(), get("items/media-links", mapOf("mid" to "$mediaId")))

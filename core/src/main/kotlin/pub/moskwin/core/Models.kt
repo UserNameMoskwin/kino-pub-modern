@@ -293,3 +293,35 @@ fun pickTracks(
     }
     return TrackPick(audio, subtitle)
 }
+
+/** Раздел каталога: фильмы, сериалы, концерты и так далее. [id] — значение параметра `type`. */
+@Serializable
+data class ContentType(val id: String, val title: String = "")
+
+@Serializable
+data class Subscription(
+    val active: Boolean = false,
+    @SerialName("end_time") val endTime: Long = 0,
+    val days: Double = 0.0,
+)
+
+@Serializable
+data class User(
+    val username: String = "",
+    @SerialName("reg_date") val regDate: Long = 0,
+    val subscription: Subscription = Subscription(),
+)
+
+/** Страница каталога. [pages] — сколько страниц всего при таких фильтрах. */
+data class ItemsPage(val items: List<Item>, val pages: Int, val total: Int)
+
+/** Фильтры и сортировка каталога. Пустое значение фильтра — «все». */
+data class CatalogQuery(
+    val type: String = "movie",
+    /** Поле сортировки с минусом для убывания: `created-`, `imdb_rating-`, `title`. */
+    val sort: String = "created-",
+    val genre: Int? = null,
+    val country: Int? = null,
+    /** Год или промежуток `2020-2023`. */
+    val year: String? = null,
+)
