@@ -46,11 +46,11 @@ internal fun SidePanel(
     BackHandler(onBack = onClose)
     val closeKey = if (left) Key.DirectionRight else Key.DirectionLeft
     Box(
-        Modifier.fillMaxSize().background(Color(0x99000000)),
+        Modifier.fillMaxSize().background(Color(0x80000000)).padding(16.dp),
         contentAlignment = if (left) Alignment.CenterStart else Alignment.CenterEnd,
     ) {
         Column(
-            Modifier.width(width).fillMaxHeight().background(Color(0xFF1C1C1C))
+            Modifier.width(width).fillMaxHeight().glassPanel()
                 .onPreviewKeyEvent { event ->
                     if (event.key != closeKey) return@onPreviewKeyEvent false
                     if (event.type == KeyEventType.KeyDown) onClose()

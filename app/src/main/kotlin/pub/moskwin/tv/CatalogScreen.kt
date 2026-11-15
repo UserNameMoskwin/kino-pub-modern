@@ -22,7 +22,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
-import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import kotlinx.coroutines.CancellationException
@@ -53,7 +52,7 @@ internal class CatalogMemory {
 private val SORTS = listOf(
     "created-" to "Сначала новые",
     "updated-" to "Недавно обновлённые",
-    "imdb_rating-" to "Рейтинг IMDb",
+    "imdb_rating-" to "Рейтинг",
     "rating-" to "Рейтинг на сервисе",
     "views-" to "Число просмотров",
     "year-" to "Год выпуска",
@@ -64,6 +63,9 @@ private val YEARS: List<Pair<String?, String>> = listOf(
     null to "Любой год", "2026" to "2026", "2025" to "2025", "2024" to "2024", "2020-2023" to "2020–2023",
     "2010-2019" to "2010-е", "2000-2009" to "2000-е", "1990-1999" to "1990-е", "1900-1989" to "До 1990",
 )
+
+/** Раздел, из которого берутся жанры, когда каталог открыт без раздела (мультфильмы). */
+private const val ALL_TYPES = "movie"
 
 private enum class Filter { TYPE, SORT, GENRE, COUNTRY, YEAR }
 
@@ -84,7 +86,7 @@ internal fun CatalogScreen(
     var status by remember { mutableStateOf(if (memory.items.isEmpty()) "Загрузка…" else "") }
     var open by remember { mutableStateOf<Filter?>(null) }
     var types by remember { mutableStateOf(memory.types) }
-    var genres by remember { mutableStateOf(memory.genres[memory.query.type].orEmpty()) }
+    var genres by remember { mutableStateOf(memory.genres[memory.query.type ?: ALL_TYPES].orEmpty()) }
     var countries by remember { mutableStateOf(memory.countries) }
     var loading by remember { mutableStateOf(false) }
     val grid = rememberLazyGridState()
@@ -130,9 +132,10 @@ internal fun CatalogScreen(
         if (countries.isEmpty()) countries = runCatching { withContext(Dispatchers.Default) { kinopub.countries() } }.getOrDefault(emptyList()).also { memory.countries = it }
     }
     LaunchedEffect(query.type) {
-        genres = memory.genres[query.type]
-            ?: runCatching { withContext(Dispatchers.Default) { kinopub.genres(query.type) } }.getOrDefault(emptyList())
-                .also { if (it.isNotEmpty()) memory.genres[query.type] = it }
+        val type = query.type ?: ALL_TYPES
+        genres = memory.genres[type]
+            ?: runCatching { withContext(Dispatchers.Default) { kinopub.genres(type) } }.getOrDefault(emptyList())
+                .also { if (it.isNotEmpty()) memory.genres[type] = it }
     }
     LaunchedEffect(query) {
         // Вернулись из карточки: список для этих фильтров уже есть.
@@ -150,7 +153,7 @@ internal fun CatalogScreen(
     }
 
     val shown = if (hideAnime) items.filter { !it.isAnime } else items
-    val typeLabel = types.firstOrNull { it.id == query.type }?.title ?: "Фильмы"
+    val typeLabel = if (query.type == null) "Все разделы" else types.firstOrNull { it.id == query.type }?.title ?: "…"
     val sortLabel = SORTS.firstOrNull { it.first == query.sort }?.second ?: query.sort
     val genreLabel = genres.firstOrNull { it.id == query.genre }?.title ?: "Все жанры"
     val countryLabel = countries.firstOrNull { it.id == query.country }?.title ?: "Все страны"
@@ -168,7 +171,7 @@ internal fun CatalogScreen(
                 )
                 items(labels.size) { i ->
                     val (filter, label) = labels[i]
-                    Button(onClick = { open = filter }, modifier = Modifier.focusRequester(chips.getValue(filter))) { Text(label) }
+                    GlassButton(onClick = { open = filter }, modifier = Modifier.focusRequester(chips.getValue(filter))) { Text(label) }
                 }
             }
             Text(
@@ -196,7 +199,7 @@ internal fun CatalogScreen(
         }
         when (open) {
             Filter.TYPE -> ChoicePanel(
-                "Раздел", types.map { it.id to it.title }.ifEmpty { listOf("movie" to "Фильмы", "serial" to "Сериалы") },
+                "Раздел", listOf<Pair<String?, String>>(null to "Все разделы") + types.map { it.id to it.title },
                 query.type, { change(query.copy(type = it, genre = null)) }, { open = null },
             )
             Filter.SORT -> ChoicePanel("Сортировка", SORTS, query.sort, { change(query.copy(sort = it)) }, { open = null })

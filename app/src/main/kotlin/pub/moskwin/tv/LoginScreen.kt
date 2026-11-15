@@ -16,7 +16,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import kotlinx.coroutines.CancellationException
@@ -65,7 +64,7 @@ fun LoginScreen(auth: Auth, onLoggedIn: () -> Unit) {
                 LaunchedEffect(Unit) { focus.requestFocus() }
                 Text("Не получилось войти", style = MaterialTheme.typography.titleLarge)
                 Text(s.message, style = MaterialTheme.typography.bodyLarge)
-                Button(onClick = { attempt++ }, modifier = Modifier.focusRequester(focus)) { Text("Повторить") }
+                GlassButton(onClick = { attempt++ }, modifier = Modifier.focusRequester(focus)) { Text("Повторить") }
             }
         }
     }

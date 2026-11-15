@@ -398,9 +398,11 @@ internal fun PlayerScreen(
         // Полоса управления: видна после нажатий и на паузе.
         if (panel == null && (now < controlsUntil || (!playing && !buffering && error == null))) {
             Column(
+                // Плавающая стеклянная плашка внизу, а не затемнение на всю ширину.
                 Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xE6000000))))
-                    .padding(start = Edge, end = Edge, top = 48.dp, bottom = 28.dp),
+                    .padding(horizontal = 32.dp, vertical = 24.dp)
+                    .glassPanel()
+                    .padding(horizontal = 28.dp, vertical = 18.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(
@@ -510,9 +512,9 @@ internal fun PlayerScreen(
 /** Панель выбора справа поверх видео. */
 @Composable
 private fun PanelBox(onBack: () -> Unit, content: @Composable () -> Unit) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterEnd) {
+    Box(Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.CenterEnd) {
         Column(
-            Modifier.width(420.dp).fillMaxHeight().background(Color(0xF01C1C1C))
+            Modifier.width(420.dp).fillMaxHeight().glassPanel()
                 // Панель справа, поэтому «влево» — тоже выход из неё без выбора, как и «назад».
                 .onPreviewKeyEvent { event ->
                     if (event.key != Key.DirectionLeft) return@onPreviewKeyEvent false

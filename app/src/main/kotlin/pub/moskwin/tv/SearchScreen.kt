@@ -113,8 +113,8 @@ internal fun SearchScreen(kinopub: Kinopub, memory: SearchMemory, onOpen: (Int) 
             Modifier
                 .padding(horizontal = Edge)
                 .fillMaxWidth(0.5f)
-                .background(Color(0xFF242424), RoundedCornerShape(8.dp))
-                .border(BorderStroke(2.dp, if (fieldFocused) Color.White else Color.Transparent), RoundedCornerShape(8.dp))
+                .glass(RowShape)
+                .border(BorderStroke(2.dp, if (fieldFocused) Color.White else Color.Transparent), RowShape)
                 .padding(horizontal = 16.dp, vertical = 12.dp),
         ) {
             if (query.isEmpty()) Text("Поиск", color = Dim, style = MaterialTheme.typography.titleMedium)

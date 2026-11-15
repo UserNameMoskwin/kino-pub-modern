@@ -317,7 +317,8 @@ data class ItemsPage(val items: List<Item>, val pages: Int, val total: Int)
 
 /** Фильтры и сортировка каталога. Пустое значение фильтра — «все». */
 data class CatalogQuery(
-    val type: String = "movie",
+    /** Раздел; null — все разделы сразу (так открываются мультфильмы: это жанр, а не раздел). */
+    val type: String? = "movie",
     /** Поле сортировки с минусом для убывания: `created-`, `imdb_rating-`, `title`. */
     val sort: String = "created-",
     val genre: Int? = null,

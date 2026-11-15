@@ -62,7 +62,7 @@ class MainActivity : ComponentActivity() {
                     // половина времени кадра. Описание экрана отключено целиком; цена —
                     // приложение не читается экранным диктором.
                     Box(
-                        Modifier.fillMaxSize().background(Background).clearAndSetSemantics { },
+                        Modifier.fillMaxSize().glassBackdrop().clearAndSetSemantics { },
                         contentAlignment = Alignment.Center,
                     ) {
                         App(kinopub, resumes)
@@ -81,7 +81,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-val Background = Color(0xFF141414)
+val Background = Color(0xFF0B0B10)
 val Foreground = Color(0xFFEDEDED)
 
 @Composable
@@ -149,7 +149,7 @@ private fun Screens(kinopub: Kinopub, settings: AppSettings, resumes: Int, onLog
                     onOpen = { stack += Screen.Card(it) },
                     onCatalog = {
                         states.removeState("catalog")
-                        stack += Screen.Catalog()
+                        stack += Screen.Catalog(CatalogMemory().apply { query = it })
                     },
                     onProfile = { stack += Screen.Profile },
                     onSettings = { stack += Screen.Settings },

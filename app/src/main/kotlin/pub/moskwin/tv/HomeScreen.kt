@@ -39,13 +39,13 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import pub.moskwin.core.CatalogQuery
 import pub.moskwin.core.ContinueCard
 import pub.moskwin.core.Device
 import pub.moskwin.core.HomeData
@@ -75,7 +75,7 @@ internal fun HomeScreen(
     focus: FocusMemory,
     onOpen: (Int) -> Unit,
     onSearch: () -> Unit,
-    onCatalog: () -> Unit,
+    onCatalog: (CatalogQuery) -> Unit,
     onProfile: () -> Unit,
     onSettings: () -> Unit,
     onLoginRequired: () -> Unit,
@@ -137,7 +137,7 @@ internal fun HomeScreen(
                 ) { Rows(home, focus, onOpen) }
                 error != null -> Centered {
                     Text("Не удалось загрузить: $error", style = MaterialTheme.typography.titleMedium)
-                    Button(onClick = { error = null; reload++ }) { Text("Повторить") }
+                    GlassButton(onClick = { error = null; reload++ }) { Text("Повторить") }
                 }
                 else -> Centered { Text("Загрузка…", style = MaterialTheme.typography.titleLarge, color = Dim) }
             }
@@ -170,11 +170,11 @@ private fun TopBar(device: Device?, focus: FocusMemory, menuButton: FocusRequest
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Button(onClick = onMenu, modifier = Modifier.focusRequester(menuButton).restoresFocus(focus, "top:menu")) { Text("☰  Меню") }
-        Button(onClick = onSearch, modifier = Modifier.restoresFocus(focus, "top:search")) { Text("Поиск") }
+        GlassButton(onClick = onMenu, modifier = Modifier.focusRequester(menuButton).restoresFocus(focus, "top:menu")) { Text("☰  Меню") }
+        GlassButton(onClick = onSearch, modifier = Modifier.restoresFocus(focus, "top:search")) { Text("Поиск") }
         Spacer(Modifier.weight(1f))
         device?.servers?.firstOrNull { it.selected == 1 }?.let {
-            Text("Сервер: ${it.label}", style = MaterialTheme.typography.titleMedium, color = Dim)
+            Text("Сервер: ${it.label}", style = MaterialTheme.typography.titleSmall, color = Foreground, modifier = Modifier.glass().padding(horizontal = 20.dp, vertical = 10.dp))
         }
     }
 }
@@ -189,7 +189,7 @@ private fun Menu(
     device: Device?,
     onClose: () -> Unit,
     onProfile: () -> Unit,
-    onCatalog: () -> Unit,
+    onCatalog: (CatalogQuery) -> Unit,
     onSearch: () -> Unit,
     onSettings: () -> Unit,
     onServerChanged: () -> Unit,
@@ -197,14 +197,14 @@ private fun Menu(
     val scope = rememberCoroutineScope()
     SidePanel(left = true, onClose = onClose, width = 360.dp) {
         PanelRow("Профиль") { onClose(); onProfile() }
-        PanelRow("Каталог", focusFirst = true) { onClose(); onCatalog() }
         PanelRow("Поиск") { onClose(); onSearch() }
+        MenuLabel("Каталог")
+        SECTIONS.forEachIndexed { index, (title, query) ->
+            PanelRow(title, focusFirst = index == 0) { onClose(); onCatalog(query) }
+        }
         val servers = device?.servers.orEmpty()
         if (servers.isNotEmpty()) {
-            Text(
-                "СЕРВЕР", color = Dim, style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier.padding(start = Edge, end = Edge, top = 20.dp, bottom = 6.dp),
-            )
+            MenuLabel("Сервер")
             servers.forEach { server ->
                 PanelRow(server.label, marked = server.selected == 1) {
                     onClose()
@@ -220,6 +220,31 @@ private fun Menu(
         PanelRow("Настройки") { onClose(); onSettings() }
     }
 }
+
+@Composable
+private fun MenuLabel(text: String) {
+    Text(
+        text.uppercase(), color = Dim, style = MaterialTheme.typography.labelLarge,
+        modifier = Modifier.padding(start = Edge, end = Edge, top = 20.dp, bottom = 6.dp),
+    )
+}
+
+/**
+ * Разделы каталога в меню и сортировка, с которой каждый открывается: фильмы и сериалы —
+ * с новинок, мультфильмы (жанр, а не раздел сервиса) — по рейтингу. Остальные разделы
+ * повторяют список типов сервиса (`v1/types`).
+ */
+private val SECTIONS = listOf(
+    "Фильмы" to CatalogQuery(type = "movie", sort = "created-"),
+    "Сериалы" to CatalogQuery(type = "serial", sort = "created-"),
+    "Мультфильмы" to CatalogQuery(type = null, sort = "imdb_rating-", genre = Item.GENRE_CARTOON),
+    "4K" to CatalogQuery(type = "4k"),
+    "3D" to CatalogQuery(type = "3d"),
+    "Концерты" to CatalogQuery(type = "concert"),
+    "Док. фильмы" to CatalogQuery(type = "documovie"),
+    "Док. сериалы" to CatalogQuery(type = "docuserial"),
+    "ТВ шоу" to CatalogQuery(type = "tvshow"),
+)
 
 private class HomeRow(val title: String, val cards: List<ContinueCard>?, val items: List<Item>?)
 
@@ -238,7 +263,8 @@ private fun Rows(home: HomeData, focus: FocusMemory, onOpen: (Int) -> Unit) {
     // и прокрутка вниз только сдвигает готовое. С LazyColumn каждый новый ряд собирался
     // прямо во время прокрутки — на процессоре телевизора это давало рывки. Внутри ряда
     // по-прежнему существуют только видимые карточки.
-    Column(Modifier.verticalScroll(rememberScrollState()).padding(top = 12.dp, bottom = 40.dp)) {
+    // По вертикали ряд в фокусе встаёт на одну и ту же высоту — заголовок ряда остаётся виден.
+    PivotScroll(RowPivot) { Column(Modifier.verticalScroll(rememberScrollState()).padding(top = 12.dp, bottom = 40.dp)) {
         rows.forEachIndexed { rowIndex, row ->
             key(row.title) { Column(Modifier.padding(bottom = 20.dp)) {
                 Text(
@@ -274,15 +300,21 @@ private fun Rows(home: HomeData, focus: FocusMemory, onOpen: (Int) -> Unit) {
                 }
             } }
         }
-    }
+    } }
 }
+
+/** На такой высоте от верха области встаёт карточка ряда в фокусе: над ней помещается заголовок ряда. */
+private val RowPivot = 52.dp
 
 @Composable
 internal fun CardRow(content: LazyListScope.() -> Unit) {
+    // Карточка в фокусе всегда стоит у левого поля, ряд едет под ней.
     // Отступы внутри ряда оставляют место увеличенной карточке в фокусе.
-    LazyRow(
-        contentPadding = PaddingValues(horizontal = Edge, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-        content = content,
-    )
+    PivotScroll(Edge) {
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = Edge, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            content = content,
+        )
+    }
 }

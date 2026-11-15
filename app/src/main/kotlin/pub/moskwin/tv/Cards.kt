@@ -40,7 +40,7 @@ import pub.moskwin.core.Item
 internal val Dim = Color(0xFF9A9A9A)
 internal val Accent = Color(0xFFE50914)
 internal val Edge = 48.dp
-private val CardShape = RoundedCornerShape(8.dp)
+private val CardShape = RoundedCornerShape(14.dp)
 
 /**
  * Где стоял фокус на экране, пока тот был закрыт другим. [pending] взводится при
@@ -113,7 +113,7 @@ internal fun MediaCard(
                             Color.White,
                             topLeft = Offset(stroke / 2, stroke / 2),
                             size = Size(size.width - stroke, size.height - stroke),
-                            cornerRadius = CornerRadius(8.dp.toPx() - stroke / 2),
+                            cornerRadius = CornerRadius(14.dp.toPx() - stroke / 2),
                             style = Stroke(stroke),
                         )
                     }
@@ -137,15 +137,15 @@ internal fun MediaCard(
     }
 }
 
-/** Вертикальная обложка с рейтингом IMDb и годом. */
+/** Вертикальная обложка; под ней рейтинг (IMDb, без подписи) и год: «7,9  2025». */
 @Composable
 internal fun PosterCard(item: Item, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    val rating = item.imdbRating?.takeIf { it > 0 }?.let { "IMDb %.1f".format(it) }
+    val rating = item.imdbRating?.takeIf { it > 0 }?.let { "%.1f".format(it) }
     MediaCard(
         image = item.posters.big ?: item.posters.medium,
         width = 132.dp, height = 198.dp,
         title = item.name,
-        subtitle = listOfNotNull(rating, item.year?.toString()).joinToString(" · "),
+        subtitle = listOfNotNull(rating, item.year?.toString()).joinToString("  "),
         progress = null,
         modifier = modifier,
         onClick = onClick,

@@ -29,9 +29,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
-import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
 import kotlinx.coroutines.CancellationException
@@ -92,7 +90,7 @@ internal fun DetailsScreen(
         loaded != null -> Loaded(kinopub, loaded, resume, notKids, onNotKids, onKidsChanged, onPlay)
         error != null -> Centered {
             Text("Не удалось открыть: $error", style = MaterialTheme.typography.titleMedium)
-            Button(onClick = { attempt++ }) { Text("Повторить") }
+            GlassButton(onClick = { attempt++ }) { Text("Повторить") }
         }
         else -> Centered { Text("Загрузка…", style = MaterialTheme.typography.titleLarge, color = Dim) }
     }
@@ -158,10 +156,10 @@ private fun Loaded(
             }
 
             Row(Modifier.padding(horizontal = Edge, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(onClick = { play(resume) }, modifier = Modifier.focusRequester(playFocus)) {
+                GlassButton(onClick = { play(resume) }, modifier = Modifier.focusRequester(playFocus)) {
                     Text(playLabel(details, resume))
                 }
-                OutlinedButton(
+                GlassButton(
                     onClick = {
                         val target = inKidsFolder != true
                         inKidsFolder = target
@@ -181,7 +179,7 @@ private fun Loaded(
                 // Исключение нужно только мультфильмам: остальное детским и так не считается.
                 if (item.isCartoon && !item.isAnime) {
                     val marked = item.id in notKids
-                    OutlinedButton(onClick = { onNotKids(item.id, !marked) }) {
+                    GlassButton(onClick = { onNotKids(item.id, !marked) }) {
                         Text(if (marked) "✓ Не детское" else "Не детское")
                     }
                 }
@@ -195,8 +193,7 @@ private fun Loaded(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         items(details.seasons.sortedBy { it.number }, key = { it.number }) { s ->
-                            if (s.number == season) Button(onClick = {}) { Text("Сезон ${s.number}") }
-                            else OutlinedButton(onClick = { season = s.number }) { Text("Сезон ${s.number}") }
+                            GlassButton(onClick = { season = s.number }, selected = s.number == season) { Text("Сезон ${s.number}") }
                         }
                     }
                 }
@@ -236,7 +233,7 @@ private fun playLabel(details: Details, resume: Video?): String {
     return "▶ $verb: сезон $season, серия ${resume.number}"
 }
 
-/** Год, страны, жанры, рейтинг IMDb, длительность — одной строкой. Рейтинга Кинопоиска нет намеренно. */
+/** Год, страны, жанры, рейтинг (IMDb, без подписи), длительность — одной строкой. Рейтинга Кинопоиска нет намеренно. */
 private fun facts(details: Details): String {
     val item = details.item
     val length = if (details.isSerial) {
@@ -247,7 +244,7 @@ private fun facts(details: Details): String {
         item.year?.toString(),
         details.countries.joinToString(", ") { it.title }.ifEmpty { null },
         item.genres.joinToString(", ") { it.title }.ifEmpty { null },
-        item.imdbRating?.takeIf { it > 0 }?.let { "IMDb %.1f".format(it) },
+        item.imdbRating?.takeIf { it > 0 }?.let { "★ %.1f".format(it) },
         length,
     ).joinToString(" · ")
 }

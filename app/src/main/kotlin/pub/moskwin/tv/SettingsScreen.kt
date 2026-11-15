@@ -268,9 +268,9 @@ internal fun SettingRow(
             .padding(horizontal = Edge - 16.dp)
             .onFocusChanged { focused = it.isFocused }
             .focusProperties { canFocus = enabled }
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RowShape)
             .clickable(interactionSource = null, indication = null, onClick = onClick)
-            .background(if (focused) RowFocused else Color.Transparent)
+            .glassRow(focused)
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -291,7 +291,7 @@ private fun DialogPanel(dialog: Dialog, onClose: () -> Unit) {
     LaunchedEffect(dialog) { runCatching { first.requestFocus() } }
     Box(Modifier.fillMaxSize().background(Color(0xB3000000)), contentAlignment = Alignment.Center) {
         Column(
-            Modifier.width(520.dp).clip(RoundedCornerShape(12.dp)).background(Panel).padding(vertical = 20.dp),
+            Modifier.width(520.dp).glassPanel().padding(vertical = 20.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             when (dialog) {
@@ -328,7 +328,7 @@ private fun DialogPanel(dialog: Dialog, onClose: () -> Unit) {
                         modifier = Modifier
                             .padding(horizontal = Edge, vertical = 8.dp)
                             .fillMaxWidth()
-                            .background(Color(0xFF1C1C1C), RoundedCornerShape(8.dp))
+                            .glass(RowShape)
                             .padding(12.dp)
                             .focusRequester(first)
                             // Поле ввода забирает стрелки пульта себе: «вниз» уводим на кнопки.
