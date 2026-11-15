@@ -1,6 +1,7 @@
 package pub.moskwin.tv
 
 import android.content.Context
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -142,6 +143,11 @@ private fun TopBar(
     val currentFocus = remember { FocusRequester() }
     val chipFocus = remember { FocusRequester() }
     var refocus by remember { mutableStateOf(false) }
+    // «Назад» сворачивает раскрытый список серверов, ничего не меняя.
+    BackHandler(enabled = expanded) {
+        expanded = false
+        refocus = true
+    }
 
     Row(
         Modifier.fillMaxWidth().padding(start = Edge, end = Edge, top = 20.dp, bottom = 4.dp),

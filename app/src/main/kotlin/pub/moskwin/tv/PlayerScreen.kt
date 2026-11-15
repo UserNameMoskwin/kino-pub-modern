@@ -40,6 +40,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -302,7 +303,9 @@ internal fun PlayerScreen(
         }
     }
     LaunchedEffect(panel) { if (panel == null) runCatching { root.requestFocus() } }
-    BackHandler(enabled = panel != null) { panel = if (panel == Panel.MENU || panel == Panel.EXTERNAL) null else Panel.MENU }
+    // Шаг назад в панели: из списка — в меню, из меню — к видео, ничего не меняя.
+    val panelBack = { panel = if (panel == Panel.MENU || panel == Panel.EXTERNAL) null else Panel.MENU }
+    BackHandler(enabled = panel != null) { panelBack() }
 
     fun seekBy(forward: Boolean) {
         // Удержание кнопки повторяет нажатия, поэтому отдельного ускорения нет.
@@ -421,7 +424,7 @@ internal fun PlayerScreen(
 
         panel?.let { open ->
             val close = { panel = null }
-            PanelBox {
+            PanelBox(onBack = panelBack) {
                 when (open) {
                     Panel.MENU -> {
                         PanelItem("Озвучка", audio?.title ?: "—", first = true) { panel = Panel.AUDIO }
@@ -506,10 +509,16 @@ internal fun PlayerScreen(
 
 /** Панель выбора справа поверх видео. */
 @Composable
-private fun PanelBox(content: @Composable () -> Unit) {
+private fun PanelBox(onBack: () -> Unit, content: @Composable () -> Unit) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterEnd) {
         Column(
             Modifier.width(420.dp).fillMaxHeight().background(Color(0xF01C1C1C))
+                // Панель справа, поэтому «влево» — тоже выход из неё без выбора, как и «назад».
+                .onPreviewKeyEvent { event ->
+                    if (event.key != Key.DirectionLeft) return@onPreviewKeyEvent false
+                    if (event.type == KeyEventType.KeyDown) onBack()
+                    true
+                }
                 .verticalScroll(rememberScrollState()).padding(vertical = 28.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) { content() }
