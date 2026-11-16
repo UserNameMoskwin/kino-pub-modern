@@ -15,7 +15,20 @@ import kotlin.coroutines.coroutineContext
  * берёт свой номер, поэтому сравнивать достаточно [versionCode].
  */
 @Serializable
-data class AppVersion(val versionCode: Int, val versionName: String = "", val notes: String = "")
+data class AppVersion(
+    val versionCode: Int,
+    val versionName: String = "",
+    val notes: String = "",
+    /** Имя APK рядом с файлом версии: в нём стоит номер версии, поэтому оно меняется с каждым выпуском. */
+    val file: String = DEFAULT_APK,
+) {
+    /** Имя файла из [file], если это простое имя APK без путей; иначе — имя по умолчанию. */
+    val apkName: String get() = file.takeIf { APK_NAME.matches(it) } ?: DEFAULT_APK
+}
+
+/** Файл, который качали версии до 0.5: в них имя было зашито. */
+const val DEFAULT_APK = "kino-pub.apk"
+private val APK_NAME = Regex("[A-Za-z0-9][A-Za-z0-9._-]*\\.apk")
 
 fun parseAppVersion(json: String): AppVersion? =
     runCatching { LenientJson.decodeFromString(AppVersion.serializer(), json) }.getOrNull()?.takeIf { it.versionCode > 0 }

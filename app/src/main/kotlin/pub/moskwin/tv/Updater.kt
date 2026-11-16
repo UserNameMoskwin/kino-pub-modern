@@ -55,7 +55,8 @@ internal class Updater(private val context: Context) {
         progress = 0f
         try {
             val file = File(File(context.cacheDir, "updates"), "kino-pub.apk")
-            downloadFile(APK_URL, file) { progress = it }
+            // Имя файла — из описания версии: в нём стоит её номер.
+            downloadFile("$BASE/${(available ?: return).apkName}", file) { progress = it }
             val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
             context.startActivity(
                 Intent(Intent.ACTION_VIEW)
@@ -73,9 +74,8 @@ internal class Updater(private val context: Context) {
     }
 
     private companion object {
-        // Адреса зашиты в установленные приложения: имя репозитория, ветки и файлов менять нельзя.
+        // Адреса зашиты в установленные приложения: имя репозитория, ветки, папки и файла версии менять нельзя.
         const val BASE = "https://raw.githubusercontent.com/UserNameMoskwin/kino-pub-modern/main/apk"
         const val VERSION_URL = "$BASE/version.json"
-        const val APK_URL = "$BASE/kino-pub.apk"
     }
 }
