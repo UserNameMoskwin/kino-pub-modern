@@ -138,12 +138,11 @@ private fun Rows(home: HomeData, kidsName: String, focus: FocusMemory, onOpen: (
     val rows = listOf(
         HomeRow("Продолжить просмотр", home.continueAdults, null),
         HomeRow("$kidsName: продолжить", home.continueKids, null),
-        HomeRow("$kidsName: избранное", null, home.kidsFavorites),
         HomeRow("Новинки: фильмы", null, home.freshMovies),
         HomeRow("Новинки: сериалы", null, home.freshSerials),
     ).filter { !(it.cards ?: it.items).isNullOrEmpty() }
 
-    // Рядов всего пять, поэтому по вертикали список не ленивый: ряды создаются один раз,
+    // Рядов всего четыре, поэтому по вертикали список не ленивый: ряды создаются один раз,
     // и прокрутка вниз только сдвигает готовое. С LazyColumn каждый новый ряд собирался
     // прямо во время прокрутки — на процессоре телевизора это давало рывки. Внутри ряда
     // по-прежнему существуют только видимые карточки.

@@ -48,6 +48,10 @@ private fun isKidsFolder(title: String, name: String): Boolean =
 suspend fun kidsFolder(api: Kinopub, name: String = KIDS_FOLDER_NEW): BookmarkFolder? =
     api.bookmarkFolders().firstOrNull { isKidsFolder(it.title, name) }
 
+/** Избранное ребёнка — содержимое детской папки; папки ещё нет — список пуст. */
+suspend fun kidsFavorites(api: Kinopub, name: String = KIDS_FOLDER_NEW): List<Item> =
+    kidsFolder(api, name)?.let { api.bookmarkItems(it.id) }.orEmpty()
+
 /** Лежит ли фильм или сериал в детской папке. */
 suspend fun isInKidsFolder(api: Kinopub, itemId: Int, name: String = KIDS_FOLDER_NEW): Boolean =
     api.itemFolders(itemId).any { isKidsFolder(it.title, name) }

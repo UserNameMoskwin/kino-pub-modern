@@ -193,6 +193,12 @@ internal fun SettingsScreen(
                     }
                 }
             }
+            row("server", "Сервер", loaded?.servers?.firstOrNull { it.selected == 1 }?.label ?: "…") {
+                val d = loaded ?: return@row
+                dialog = Dialog.Choice("Сервер", d.servers.map { "${it.id}" to it.label }, d.servers.firstOrNull { it.selected == 1 }?.id?.toString()) {
+                    service { kinopub.setServer(d.id, it.toInt()) }
+                }
+            }
             loaded?.toggles?.forEach { toggle ->
                 row("toggle:${toggle.key}", toggle.label.ifEmpty { toggle.key }, checked = toggle.on) {
                     service { kinopub.setDeviceSetting(loaded.id, toggle.key, if (toggle.on) "0" else "1") }

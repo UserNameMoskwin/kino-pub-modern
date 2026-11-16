@@ -20,16 +20,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.key
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRestorer
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import pub.moskwin.core.Device
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -127,6 +123,7 @@ private sealed interface Screen {
     class Player(val request: PlayRequest) : Screen
     class Catalog(val title: String, val memory: CatalogMemory) : Screen
     data object Profile : Screen
+    class Kids(val focus: FocusMemory = FocusMemory()) : Screen
 }
 
 /** Главный экран и стопка открытых поверх него: поиск, карточки, настройки. «Назад» снимает верхний. */
@@ -142,7 +139,6 @@ private fun Screens(kinopub: Kinopub, settings: AppSettings, resumes: Int, onLog
     var kidsEdits by remember { mutableIntStateOf(0) }
     val states = rememberSaveableStateHolder()
 
-    BackHandler(enabled = stack.isNotEmpty()) { stack.removeAt(stack.lastIndex) }
     val top = stack.lastOrNull()
     val screenName = when (top) {
         null -> "home"
@@ -152,16 +148,10 @@ private fun Screens(kinopub: Kinopub, settings: AppSettings, resumes: Int, onLog
         is Screen.Player -> "player"
         is Screen.Catalog -> "catalog"
         Screen.Profile -> "profile"
+        is Screen.Kids -> "kids"
     }
     SideEffect { Perf.screen = screenName }
 
-    // Настройки устройства нужны меню ради сервера; перечитываются при возврате в приложение.
-    val scope = rememberCoroutineScope()
-    var device by remember { mutableStateOf<Device?>(null) }
-    var serverListOpen by remember { mutableStateOf(false) }
-    LaunchedEffect(resumes) {
-        withContext(Dispatchers.Default) { runCatching { kinopub.device() }.getOrNull() }?.let { device = it }
-    }
     val kidsName = settings.kidsNameOrNull
     // Раздел из меню открывается вместо текущего, а не поверх: «назад» ведёт на главную.
     fun open(screen: Screen?) {
@@ -171,20 +161,34 @@ private fun Screens(kinopub: Kinopub, settings: AppSettings, resumes: Int, onLog
 
     // Меню стоит рядом с разделами; карточка и плеер занимают весь экран.
     val menuShown = top !is Screen.Card && top !is Screen.Player
+    val menuKey = when (top) {
+        null -> MENU_HOME
+        is Screen.Search -> MENU_SEARCH
+        is Screen.Catalog -> top.title
+        Screen.Profile -> MENU_PROFILE
+        Screen.Settings -> MENU_SETTINGS
+        is Screen.Kids -> MENU_KIDS
+        else -> ""
+    }
+    val menuRows = remember { mutableMapOf<String, FocusRequester>() }
+    var contentFocused by remember { mutableStateOf(false) }
+    // «Назад»: из карточки и плеера — на экран под ними; из содержимого раздела — фокус в меню;
+    // из меню — на главную. С главной, когда фокус уже в меню, «назад» закрывает приложение.
+    // Окна и панели внутри экранов закрываются своими обработчиками: они объявлены позже и идут первыми.
+    BackHandler(enabled = !menuShown || contentFocused || top != null) {
+        when {
+            !menuShown -> stack.removeAt(stack.lastIndex)
+            contentFocused -> runCatching { menuRows[menuKey]?.requestFocus() }
+            else -> open(null)
+        }
+    }
     Box(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxSize()) {
             if (menuShown) {
                 SideMenu(
-                    current = when (top) {
-                        null -> MENU_HOME
-                        is Screen.Search -> MENU_SEARCH
-                        is Screen.Catalog -> top.title
-                        Screen.Profile -> MENU_PROFILE
-                        Screen.Settings -> MENU_SETTINGS
-                        else -> ""
-                    },
-                    device = device,
-                    serverListOpen = serverListOpen,
+                    current = menuKey,
+                    rows = menuRows,
+                    kidsName = kidsName,
                     onHome = { open(null) },
                     onSearch = {
                         // Новый поиск начинается с чистого экрана, без прокрутки прошлого.
@@ -195,7 +199,7 @@ private fun Screens(kinopub: Kinopub, settings: AppSettings, resumes: Int, onLog
                         states.removeState("catalog")
                         open(Screen.Catalog(title, CatalogMemory().apply { this.query = query }))
                     },
-                    onServer = { if (device != null) serverListOpen = true },
+                    onKids = { open(Screen.Kids()) },
                     onProfile = { open(Screen.Profile) },
                     onSettings = { open(Screen.Settings) },
                 )
@@ -214,6 +218,7 @@ private fun Screens(kinopub: Kinopub, settings: AppSettings, resumes: Int, onLog
                             }
                         }
                     }
+                    .onFocusChanged { contentFocused = it.hasFocus }
                     .focusRestorer()
                     .focusGroup(),
             ) {
@@ -251,6 +256,11 @@ private fun Screens(kinopub: Kinopub, settings: AppSettings, resumes: Int, onLog
                             )
                         }
                     }
+                    is Screen.Kids -> KidsScreen(
+                        kinopub, kidsName ?: "", refreshKey = kidsEdits, focus = top.focus,
+                        onOpen = { stack += Screen.Card(it) },
+                        onLoginRequired = onLoginRequired,
+                    )
                     Screen.Profile -> ProfileScreen(kinopub, settings, onLoggedOut = onLoginRequired)
                     is Screen.Player -> PlayerScreen(kinopub, settings, top.request, onExit = { stack.remove(top) })
                     Screen.Settings -> SettingsScreen(
@@ -260,24 +270,6 @@ private fun Screens(kinopub: Kinopub, settings: AppSettings, resumes: Int, onLog
                     )
                 }
             }
-        }
-        val current = device
-        if (serverListOpen && current != null) {
-            ChoicePanel(
-                "Сервер", current.servers.map { it.id to it.label },
-                current.servers.firstOrNull { it.selected == 1 }?.id ?: -1,
-                onPick = { id ->
-                    scope.launch {
-                        // Сбой переключения оставляет прежний сервер: настройки перечитываются в любом случае.
-                        withContext(Dispatchers.Default) {
-                            runCatching { kinopub.setServer(current.id, id) }
-                            runCatching { kinopub.device() }.getOrNull()
-                        }?.let { device = it }
-                        kidsEdits++
-                    }
-                },
-                onClose = { serverListOpen = false },
-            )
         }
     }
 }
