@@ -1,5 +1,8 @@
 # KinoPub для Android TV
 
+[Исходный код на GitHub](https://github.com/UserNameMoskwin/kino-pub-modern) ·
+[Как собрать самому](docs/development.md)
+
 Приложение для просмотра [kino.pub](https://kino.watch) на телевизоре с Android TV или
 Google TV. Работает с обычным аккаунтом и подпиской kino.pub — тем же сервисом, что
 и сайт: сейчас он открывается по адресу [kino.watch](https://kino.watch).
