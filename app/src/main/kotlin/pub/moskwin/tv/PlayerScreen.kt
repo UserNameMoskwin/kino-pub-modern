@@ -38,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Path
@@ -417,7 +418,14 @@ internal fun PlayerScreen(
         choices.saveOffsets(video.id, audioOffset, subtitleOffset)
     }
     // Шаг назад в панели: из списка — в меню, из меню — к видео, ничего не меняя.
-    val panelBack = { panel = if (panel == Panel.MENU || panel == Panel.EXTERNAL) null else Panel.MENU }
+    // Из какого списка вернулись в меню: фокус встаёт на его пункт, а не на первый.
+    var menuFrom by remember { mutableStateOf(Panel.AUDIO) }
+    val panelBack = {
+        // Режим картинки, который только примеряли, без OK не остаётся.
+        if (panel == Panel.PICTURE) picture = settings.picture
+        panel?.takeIf { it != Panel.MENU && it != Panel.EXTERNAL }?.let { menuFrom = it }
+        panel = if (panel == Panel.MENU || panel == Panel.EXTERNAL) null else Panel.MENU
+    }
     BackHandler(enabled = panel != null) { panelBack() }
 
     /** Переход на соседнюю серию из плашки: место в текущей запоминается на сервере. */
@@ -491,7 +499,7 @@ internal fun PlayerScreen(
                     Key.MediaPause -> { player.pause(); showControls(); true }
                     Key.DirectionRight, Key.MediaFastForward -> { seekBy(true); true }
                     Key.DirectionLeft, Key.MediaRewind -> { seekBy(false); true }
-                    Key.DirectionUp, Key.Menu -> { panel = Panel.MENU; true }
+                    Key.DirectionUp, Key.Menu -> { menuFrom = Panel.AUDIO; panel = Panel.MENU; true }
                     // Вниз — плашка как на паузе, у сериала с выбором кнопок; второе нажатие убирает её.
                     Key.DirectionDown -> {
                         // У сериала плашка, которая и так видна (после перемотки, на паузе), от «вниз»
@@ -636,14 +644,14 @@ internal fun PlayerScreen(
             PanelBox(onBack = panelBack) {
                 when (open) {
                     Panel.MENU -> {
-                        PanelItem("Озвучка", audio?.title ?: "—", first = true) { panel = Panel.AUDIO }
-                        PanelItem("Субтитры", subtitleLabel) { panel = Panel.SUBTITLES }
-                        PanelItem("Сдвиг звука", offsetLabel(audioOffset)) { panel = Panel.AUDIO_OFFSET }
-                        PanelItem("Сдвиг субтитров", offsetLabel(subtitleOffset)) { panel = Panel.SUBTITLE_OFFSET }
-                        PanelItem("Качество", if (quality == 0) "Авто (лучшее)" else "${quality}p") { panel = Panel.QUALITY }
-                        PanelItem("Скорость", "${speed}×") { panel = Panel.SPEED }
-                        PanelItem("Картинка", PICTURES.firstOrNull { it.first == picture }?.second ?: "—") { panel = Panel.PICTURE }
-                        PanelItem("Сервер", serverLabel ?: "—") { panel = Panel.SERVER }
+                        PanelItem("Озвучка", audio?.title ?: "—", first = menuFrom == Panel.AUDIO) { panel = Panel.AUDIO }
+                        PanelItem("Субтитры", subtitleLabel, first = menuFrom == Panel.SUBTITLES) { panel = Panel.SUBTITLES }
+                        PanelItem("Сдвиг звука", offsetLabel(audioOffset), first = menuFrom == Panel.AUDIO_OFFSET) { panel = Panel.AUDIO_OFFSET }
+                        PanelItem("Сдвиг субтитров", offsetLabel(subtitleOffset), first = menuFrom == Panel.SUBTITLE_OFFSET) { panel = Panel.SUBTITLE_OFFSET }
+                        PanelItem("Качество", if (quality == 0) "Авто (лучшее)" else "${quality}p", first = menuFrom == Panel.QUALITY) { panel = Panel.QUALITY }
+                        PanelItem("Скорость", "${speed}×", first = menuFrom == Panel.SPEED) { panel = Panel.SPEED }
+                        PanelItem("Картинка", PICTURES.firstOrNull { it.first == picture }?.second ?: "—", first = menuFrom == Panel.PICTURE) { panel = Panel.PICTURE }
+                        PanelItem("Сервер", serverLabel ?: "—", first = menuFrom == Panel.SERVER) { panel = Panel.SERVER }
                     }
                     Panel.AUDIO -> video.audios.forEachIndexed { i, track ->
                         PanelItem(track.title, null, first = track.index == audio?.index || (audio == null && i == 0), marked = track.index == audio?.index) {
@@ -676,9 +684,14 @@ internal fun PlayerScreen(
                             }
                         }
                     }
-                    // Выбор запоминается для всех фильмов: это свойство экрана, а не фильма.
+                    // Режим примеряется сразу, как только на пункт встал фокус; OK оставляет его и
+                    // закрывает настройки, «назад» возвращает прежний. Выбор запоминается для всех
+                    // фильмов: это свойство экрана, а не фильма.
                     Panel.PICTURE -> PICTURES.forEach { (key, label, _) ->
-                        PanelItem(label, null, first = picture == key, marked = picture == key) {
+                        PanelItem(
+                            label, null, first = settings.picture == key, marked = settings.picture == key,
+                            onFocus = { picture = key },
+                        ) {
                             picture = key; settings.picture = key; close()
                         }
                     }
@@ -744,14 +757,21 @@ private fun PanelBox(onBack: () -> Unit, content: @Composable () -> Unit) {
     }
 }
 
-/** Строка панели. [first] — на ней фокус при открытии, [marked] — текущее значение. */
+/**
+ * Строка панели. [first] — на ней фокус при открытии, [marked] — текущее значение.
+ * [onFocus] вызывается, когда на строку встал фокус: так значение примеряют до нажатия.
+ */
 @Composable
-private fun PanelItem(title: String, value: String?, first: Boolean = false, marked: Boolean = false, onClick: () -> Unit) {
+private fun PanelItem(
+    title: String, value: String?, first: Boolean = false, marked: Boolean = false,
+    onFocus: (() -> Unit)? = null, onClick: () -> Unit,
+) {
     val focus = remember { FocusRequester() }
     if (first) LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     SettingRow(
         if (marked) "●  $title" else title, value, null, enabled = true,
-        modifier = if (first) Modifier.focusRequester(focus) else Modifier,
+        modifier = (if (first) Modifier.focusRequester(focus) else Modifier)
+            .then(if (onFocus != null) Modifier.onFocusChanged { if (it.isFocused) onFocus() } else Modifier),
         onClick = onClick,
     )
 }
