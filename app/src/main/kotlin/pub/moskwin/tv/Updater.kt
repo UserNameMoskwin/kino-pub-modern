@@ -11,12 +11,12 @@ import pub.moskwin.core.AppVersion
 import pub.moskwin.core.downloadFile
 import pub.moskwin.core.fetchAppVersion
 import java.io.File
-import kotlin.math.roundToInt
 
 /**
  * Обновление приложения из репозитория. При запуске читает `apk/version.json`; если там
- * версия новее установленной, в меню появляется пункт «Обновить». По нажатию APK
- * скачивается и открывается системное окно установки: подтвердить её должен человек,
+ * версия новее установленной, у «Настроек» в меню загорается красная точка, а в самих
+ * настройках появляется строка с новой версией: по ней открывается список изменений и
+ * кнопка установки. APK скачивается, и открывается системное окно установки: подтвердить её должен человек,
  * без подтверждения Android обновляет только приложения из магазинов.
  * Обновление встаёт поверх, только если подписано тем же ключом, что и установленная сборка.
  */
@@ -32,24 +32,12 @@ internal class Updater(private val context: Context) {
     var problem by mutableStateOf<String?>(null)
         private set
 
-    /** Подпись пункта меню; null — пункта нет. */
-    val label: String?
-        get() {
-            val version = available ?: return null
-            val loaded = progress
-            return when {
-                loaded != null -> "Загрузка ${(loaded * 100).roundToInt()} %"
-                problem != null -> "Не вышло, повторить"
-                else -> "Обновить до ${version.versionName}"
-            }
-        }
-
     /** Проверяет, вышла ли новая версия. Возвращает текст итога для экрана настроек. */
     suspend fun check(): String = try {
         val latest = fetchAppVersion(VERSION_URL)
         if (latest.versionCode > BuildConfig.VERSION_CODE) {
             available = latest
-            "Доступна версия ${latest.versionName}: пункт «Обновить» в меню"
+            "Доступна версия ${latest.versionName}"
         } else {
             available = null
             "Установлена последняя версия"

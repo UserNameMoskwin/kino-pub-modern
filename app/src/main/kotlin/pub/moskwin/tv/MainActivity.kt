@@ -20,8 +20,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.key
-import androidx.compose.runtime.rememberCoroutineScope
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
@@ -178,10 +178,15 @@ private fun Screens(kinopub: Kinopub, settings: AppSettings, resumes: Int, onLog
         else -> ""
     }
     val menuRows = remember { mutableMapOf<String, FocusRequester>() }
-    val scope = rememberCoroutineScope()
     val updater = remember { Updater(context.applicationContext) }
     // Проверка новой версии — раз за запуск; сбой сети ей не мешает работе приложения.
     LaunchedEffect(Unit) { updater.check() }
+    // Подписка перечитывается при возврате в приложение: по ней ставится точка у «Профиля».
+    var subscriptionEnds by remember { mutableStateOf(false) }
+    LaunchedEffect(resumes) {
+        runCatching { withContext(Dispatchers.Default) { kinopub.user() } }.getOrNull()
+            ?.let { subscriptionEnds = it.subscription.endsWithin(SUBSCRIPTION_WARN_DAYS) }
+    }
     var menuFocused by remember { mutableStateOf(false) }
     // «Назад»: из карточки и плеера — на экран под ними; из содержимого раздела — фокус в меню;
     // из меню — на главную. С главной, когда фокус уже в меню, «назад» закрывает приложение.
@@ -202,7 +207,8 @@ private fun Screens(kinopub: Kinopub, settings: AppSettings, resumes: Int, onLog
                     current = menuKey,
                     rows = menuRows,
                     kidsName = kidsName,
-                    updateLabel = updater.label,
+                    profileDot = subscriptionEnds,
+                    settingsDot = updater.available != null,
                     onFocus = { menuFocused = it },
                     onHome = { open(null) },
                     onSearch = {
@@ -218,7 +224,6 @@ private fun Screens(kinopub: Kinopub, settings: AppSettings, resumes: Int, onLog
                     onKids = { open(Screen.Kids()) },
                     onProfile = { open(Screen.Profile) },
                     onSettings = { open(Screen.Settings) },
-                    onUpdate = { scope.launch { updater.install() } },
                 )
             }
             // Положение прокрутки каждого экрана сохраняется, пока он закрыт другим.

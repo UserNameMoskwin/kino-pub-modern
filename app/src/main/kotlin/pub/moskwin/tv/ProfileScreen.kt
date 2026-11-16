@@ -1,6 +1,13 @@
 package pub.moskwin.tv
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -27,6 +34,9 @@ import pub.moskwin.core.User
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+/** За сколько дней до конца подписки приложение начинает о ней напоминать. */
+internal const val SUBSCRIPTION_WARN_DAYS = 7
 
 /** Профиль: аккаунт, подписка, это устройство и выход из аккаунта на телевизоре. */
 @Composable
@@ -56,6 +66,23 @@ internal fun ProfileScreen(kinopub: Kinopub, settings: AppSettings, onLoggedOut:
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = 28.dp)) {
         Text("Профиль", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(start = Edge, end = Edge, bottom = 16.dp))
         val u = user
+        // Подписка кончается: напоминание стоит первым. Продлить её можно только на сайте.
+        if (u != null && u.subscription.endsWithin(SUBSCRIPTION_WARN_DAYS)) {
+            Row(
+                Modifier.padding(start = Edge, end = Edge, bottom = 16.dp).fillMaxWidth(0.8f).glassPanel().padding(horizontal = 20.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(10.dp).background(Accent, CircleShape))
+                Column(Modifier.padding(start = 14.dp)) {
+                    Text(
+                        if (u.subscription.active) "До окончания подписки осталось меньше $SUBSCRIPTION_WARN_DAYS дней"
+                        else "Подписка не активна",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text("Продлите её на сайте kino.watch", color = Dim, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
         PanelRow("Аккаунт", u?.username ?: "…", focusFirst = true) {}
         PanelRow(
             "Подписка",

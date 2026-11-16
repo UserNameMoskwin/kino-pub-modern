@@ -303,7 +303,10 @@ data class Subscription(
     val active: Boolean = false,
     @SerialName("end_time") val endTime: Long = 0,
     val days: Double = 0.0,
-)
+) {
+    /** Подписка не активна или до её конца осталось меньше [days] дней: пора продлевать. */
+    fun endsWithin(days: Int): Boolean = !active || this.days < days
+}
 
 @Serializable
 data class User(

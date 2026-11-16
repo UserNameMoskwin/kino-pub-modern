@@ -52,7 +52,8 @@ kinopub.clientSecret=<ключ Kodi-плагина>
 `versionCode` там больше своего, предлагают обновиться и скачивают `apk/kino-pub.apk`.
 Сборка берёт номер версии из того же файла. Порядок выпуска:
 
-1. Увеличить `versionCode` и `versionName` в `apk/version.json`, в `notes` — что нового.
+1. Увеличить `versionCode` и `versionName` в `apk/version.json`, в `notes` — что нового:
+   это список изменений, который человек видит перед установкой, по строке на пункт.
 2. `pwsh -File device\release.ps1` — тесты, сборка, копия в `apk/kino-pub.apk`.
 3. Закоммитить `apk/` и отправить в `main`.
 

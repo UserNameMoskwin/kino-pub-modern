@@ -6,7 +6,9 @@ import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -60,15 +62,14 @@ internal const val MENU_PROFILE = "profile"
 internal const val MENU_SETTINGS = "settings"
 internal const val MENU_KIDS = "kids"
 internal const val MENU_LATER = "later"
-private const val MENU_UPDATE = "update"
 
 /**
  * Боковое меню: всегда на экране слева от содержимого. «Влево» с края содержимого
  * переводит фокус на пункт текущего раздела, «вправо» возвращает туда, где фокус был.
  * [current] — ключ открытого раздела. [rows] — фокус пунктов по ключам: по нему экран
  * переводит фокус в меню кнопкой «назад». [kidsName] — имя ребёнка: пункт с его избранным;
- * null — режим ребёнка выключен, пункта нет. [updateLabel] — подпись пункта обновления;
- * null — обновлять нечего. [onFocus] сообщает, в меню ли фокус.
+ * null — режим ребёнка выключен, пункта нет. Красная точка у пункта зовёт внутрь:
+ * [profileDot] — подписка кончается, [settingsDot] — вышло обновление. [onFocus] сообщает, в меню ли фокус.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -76,7 +77,8 @@ internal fun SideMenu(
     current: String,
     rows: MutableMap<String, FocusRequester>,
     kidsName: String?,
-    updateLabel: String?,
+    profileDot: Boolean,
+    settingsDot: Boolean,
     onFocus: (Boolean) -> Unit,
     onHome: () -> Unit,
     onSearch: () -> Unit,
@@ -85,7 +87,6 @@ internal fun SideMenu(
     onCatalog: (String, CatalogQuery) -> Unit,
     onProfile: () -> Unit,
     onSettings: () -> Unit,
-    onUpdate: () -> Unit,
 ) {
     fun requester(key: String) = rows.getOrPut(key) { FocusRequester() }
     Column(
@@ -118,13 +119,8 @@ internal fun SideMenu(
             MenuRow(title, current == title, requester(title), onClick = { onCatalog(title, query) })
         }
         Spacer(Modifier.height(14.dp))
-        MenuRow("Профиль", current == MENU_PROFILE, requester(MENU_PROFILE), onProfile)
-        MenuRow("Настройки", current == MENU_SETTINGS, requester(MENU_SETTINGS), onSettings)
-        // Вышла новая версия: пункт появляется сам и исчезает после обновления.
-        if (updateLabel != null) {
-            Spacer(Modifier.height(14.dp))
-            MenuRow(updateLabel, false, requester(MENU_UPDATE), onUpdate, accent = true)
-        }
+        MenuRow("Профиль", current == MENU_PROFILE, requester(MENU_PROFILE), onProfile, dot = profileDot)
+        MenuRow("Настройки", current == MENU_SETTINGS, requester(MENU_SETTINGS), onSettings, dot = settingsDot)
     }
 }
 
@@ -137,14 +133,14 @@ internal fun Logo(modifier: Modifier = Modifier) {
         Text("kino", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color.White)
         Text(
             "pub", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color.White,
-            modifier = Modifier.padding(start = 3.dp).background(Color(0xFFE50914), RoundedCornerShape(5.dp))
+            modifier = Modifier.padding(start = 3.dp).background(Accent, RoundedCornerShape(5.dp))
                 .padding(horizontal = 5.dp),
         )
     }
 }
 
 @Composable
-private fun MenuRow(title: String, marked: Boolean, requester: FocusRequester, onClick: () -> Unit, accent: Boolean = false) {
+private fun MenuRow(title: String, marked: Boolean, requester: FocusRequester, onClick: () -> Unit, dot: Boolean = false) {
     var focused by remember { mutableStateOf(false) }
     Box(
         Modifier
@@ -162,7 +158,7 @@ private fun MenuRow(title: String, marked: Boolean, requester: FocusRequester, o
                 },
             )
             .padding(horizontal = 12.dp, vertical = 5.dp),
-    ) {
+    ) { Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
             title,
             style = MaterialTheme.typography.titleSmall,
@@ -170,10 +166,11 @@ private fun MenuRow(title: String, marked: Boolean, requester: FocusRequester, o
             color = when {
                 focused -> Color(0xFF101014)
                 marked -> Foreground
-                accent -> Color(0xFFFF6B70)
                 else -> Color(0xFFB4B4BE)
             },
             maxLines = 1, overflow = TextOverflow.Ellipsis,
         )
-    }
+        if (dot) Box(Modifier.padding(start = 8.dp).size(7.dp).background(Accent, CircleShape))
+    } }
 }
+

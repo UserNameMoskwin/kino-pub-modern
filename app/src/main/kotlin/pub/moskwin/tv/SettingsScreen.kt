@@ -12,7 +12,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -57,7 +59,9 @@ import pub.moskwin.core.Device
 import pub.moskwin.core.Kinopub
 import pub.moskwin.core.LoginRequiredException
 import pub.moskwin.core.measureSpeed
+import pub.moskwin.core.AppVersion
 import pub.moskwin.core.mediaSegments
+import kotlin.math.roundToInt
 
 private val RowFocused = Color(0xFF333333)
 private val Panel = Color(0xFF2A2A2A)
@@ -67,6 +71,8 @@ private sealed interface Dialog {
     class Choice(val title: String, val options: List<Pair<String, String>>, val current: String?, val onPick: (String) -> Unit) : Dialog
     class Input(val title: String, val initial: String, val onSave: (String) -> Unit) : Dialog
     class Confirm(val title: String, val text: String, val action: String, val onConfirm: () -> Unit) : Dialog
+    /** Новая версия: что в ней изменилось и кнопка установки. */
+    class Update(val version: AppVersion, val onInstall: () -> Unit) : Dialog
 }
 
 /**
@@ -89,6 +95,18 @@ internal fun SettingsScreen(
     var dialog by remember { mutableStateOf<Dialog?>(null) }
     val rowFocus = remember { mutableMapOf<String, FocusRequester>() }
     var lastRow by remember { mutableStateOf("name") }
+    // Вышло обновление — экран открывается на нём.
+    val firstRow = if (updater.available != null) "update-new" else "name"
+    /** Окно новой версии: список изменений и установка. */
+    fun showUpdate(version: AppVersion) {
+        dialog = Dialog.Update(version) {
+            scope.launch {
+                status = "Скачиваю обновление…"
+                updater.install()
+                status = updater.problem?.let { "Обновление не скачалось: $it" }
+            }
+        }
+    }
     var firstFocus by remember { mutableStateOf(true) }
 
     suspend fun reloadDevice() {
@@ -132,9 +150,9 @@ internal fun SettingsScreen(
 
     // [available] = false — пункт не работает на этом устройстве или не сделан: он серый и фокус не берёт.
     @Composable
-    fun row(key: String, title: String, value: String? = null, checked: Boolean? = null, available: Boolean = true, onClick: () -> Unit) {
+    fun row(key: String, title: String, value: String? = null, checked: Boolean? = null, available: Boolean = true, mark: Boolean = false, onClick: () -> Unit) {
         val requester = remember(key) { FocusRequester().also { rowFocus[key] = it } }
-        if (key == "name" && firstFocus) {
+        if (key == firstRow && firstFocus) {
             LaunchedEffect(Unit) {
                 runCatching { requester.requestFocus() }
                 firstFocus = false
@@ -144,6 +162,7 @@ internal fun SettingsScreen(
             title, value, checked,
             enabled = dialog == null && available,
             dimmed = !available,
+            mark = mark,
             modifier = Modifier.focusRequester(requester).onFocusChanged { if (it.isFocused) lastRow = key },
             onClick = onClick,
         )
@@ -160,6 +179,15 @@ internal fun SettingsScreen(
             )
         }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 28.dp)) {
+
+            updater.available?.let { version ->
+                Header("Обновление")
+                row(
+                    "update-new", "Доступна версия ${version.versionName}",
+                    updater.progress?.let { "Загрузка ${(it * 100).roundToInt()} %" } ?: "Что нового и установка",
+                    mark = true,
+                ) { showUpdate(version) }
+            }
 
             Header("Настройки устройства")
             row("name", "Название устройства", settings.deviceName) {
@@ -266,16 +294,11 @@ internal fun SettingsScreen(
 
             Header("О приложении")
             row("version", "Версия", BuildConfig.VERSION_NAME) {}
-            row("update", "Проверить обновления", updater.available?.let { "Доступна версия ${it.versionName} — нажмите, чтобы обновить" }) {
-                scope.launch {
-                    if (updater.available != null) {
-                        status = "Скачиваю обновление…"
-                        updater.install()
-                        status = updater.problem?.let { "Обновление не скачалось: $it" }
-                    } else {
-                        status = "Проверяю…"
-                        status = updater.check()
-                    }
+            row("update", "Проверить обновления", updater.available?.let { "Доступна версия ${it.versionName}" }) {
+                val version = updater.available
+                if (version != null) showUpdate(version) else scope.launch {
+                    status = "Проверяю…"
+                    status = updater.check()
                 }
             }
             row("posters", "Удалить закэшированные постеры") {
@@ -310,6 +333,7 @@ internal fun SettingRow(
     enabled: Boolean,
     modifier: Modifier = Modifier,
     dimmed: Boolean = false,
+    mark: Boolean = false,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -325,6 +349,8 @@ internal fun SettingRow(
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // Красная точка — строка, на которую стоит обратить внимание (вышло обновление).
+        if (mark) Box(Modifier.padding(end = 12.dp).size(9.dp).background(Accent, CircleShape))
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleMedium, color = if (dimmed) Color(0xFF6A6A6A) else Foreground)
             if (value != null) Text(value, color = Dim, style = MaterialTheme.typography.bodyMedium)
@@ -397,6 +423,19 @@ private fun DialogPanel(dialog: Dialog, onClose: () -> Unit) {
                         if (name.isNotEmpty() && name != dialog.initial) dialog.onSave(name)
                     }
                     SettingRow("Отмена", null, null, enabled = true, onClick = onClose)
+                }
+                is Dialog.Update -> {
+                    PanelTitle("Версия ${dialog.version.versionName}")
+                    Text(
+                        dialog.version.notes.ifBlank { "Список изменений не указан." },
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.padding(horizontal = Edge, vertical = 8.dp),
+                    )
+                    SettingRow("Скачать и установить", null, null, enabled = true, modifier = Modifier.focusRequester(first)) {
+                        onClose()
+                        dialog.onInstall()
+                    }
+                    SettingRow("Не сейчас", null, null, enabled = true, onClick = onClose)
                 }
                 is Dialog.Confirm -> {
                     PanelTitle(dialog.title)
