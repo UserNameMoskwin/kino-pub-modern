@@ -214,7 +214,7 @@ internal fun SettingsScreen(
             Header("Режим ребёнка")
             row(
                 "kids", "Режим ребёнка",
-                if (settings.kidsMode) "Детские ряды на главной и кнопка «Для ${settings.kidsName}»; мультфильмы идут в дубляже без субтитров"
+                if (settings.kidsMode) "Детский ряд на главной, раздел «${settings.kidsName}» в меню и детская кнопка в карточке; мультфильмы идут в дубляже без субтитров"
                 else "Выключен: детских рядов и кнопок нет",
                 checked = settings.kidsMode,
             ) {

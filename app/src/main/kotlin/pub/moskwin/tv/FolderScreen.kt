@@ -22,18 +22,18 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import pub.moskwin.core.Item
-import pub.moskwin.core.Kinopub
 import pub.moskwin.core.LoginRequiredException
-import pub.moskwin.core.kidsFavorites
 
 /**
- * Раздел ребёнка: его избранное — содержимое детской папки закладок. Открывается из меню
- * пунктом с именем ребёнка [name]. [refreshKey] растёт, когда детскую папку правят в карточке.
+ * Раздел из папки закладок: избранное ребёнка или «Посмотрю позже». Открывается из меню.
+ * [load] читает содержимое папки, [emptyNote] показывается, пока в ней пусто.
+ * [refreshKey] растёт, когда папки правят в карточке.
  */
 @Composable
-internal fun KidsScreen(
-    kinopub: Kinopub,
-    name: String,
+internal fun FolderScreen(
+    title: String,
+    emptyNote: String,
+    load: suspend () -> List<Item>,
     refreshKey: Int,
     focus: FocusMemory,
     onOpen: (Int) -> Unit,
@@ -43,9 +43,9 @@ internal fun KidsScreen(
     var error by remember { mutableStateOf<String?>(null) }
     remember { focus.pending = true }
 
-    LaunchedEffect(refreshKey, name) {
+    LaunchedEffect(refreshKey) {
         try {
-            items = withContext(Dispatchers.Default) { kidsFavorites(kinopub, name) }
+            items = withContext(Dispatchers.Default) { load() }
             error = null
         } catch (e: CancellationException) {
             throw e
@@ -57,12 +57,12 @@ internal fun KidsScreen(
     }
 
     Column(Modifier.fillMaxSize().padding(top = 28.dp)) {
-        Text(name, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(start = Edge, bottom = 4.dp))
+        Text(title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(start = Edge, bottom = 4.dp))
         val loaded = items
         val note = when {
             loaded == null && error != null -> "Не удалось загрузить: $error"
             loaded == null -> "Загрузка…"
-            loaded.isEmpty() -> "Пока пусто. Мультфильм попадает сюда кнопкой «Для $name» в его карточке."
+            loaded.isEmpty() -> emptyNote
             else -> null
         }
         if (note != null) {
@@ -75,7 +75,7 @@ internal fun KidsScreen(
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             itemsIndexed(loaded.orEmpty(), key = { _, item -> item.id }) { index, item ->
-                PosterCard(item, Modifier.restoresFocus(focus, "kids:${item.id}", index == 0), onClick = { onOpen(item.id) })
+                PosterCard(item, Modifier.restoresFocus(focus, "folder:${item.id}", index == 0), onClick = { onOpen(item.id) })
             }
         }
     }

@@ -52,9 +52,35 @@ suspend fun kidsFolder(api: Kinopub, name: String = KIDS_FOLDER_NEW): BookmarkFo
 suspend fun kidsFavorites(api: Kinopub, name: String = KIDS_FOLDER_NEW): List<Item> =
     kidsFolder(api, name)?.let { api.bookmarkItems(it.id) }.orEmpty()
 
-/** Лежит ли фильм или сериал в детской папке. */
-suspend fun isInKidsFolder(api: Kinopub, itemId: Int, name: String = KIDS_FOLDER_NEW): Boolean =
-    api.itemFolders(itemId).any { isKidsFolder(it.title, name) }
+/** Папка закладок «Посмотрю позже»: приложение создаёт её само при первом добавлении. */
+const val LATER_FOLDER = "Посмотрю позже"
+
+private fun isLaterFolder(title: String): Boolean = title.trim().equals(LATER_FOLDER, ignoreCase = true)
+
+/** Раздел «Посмотрю позже» — содержимое одноимённой папки; папки ещё нет — список пуст. */
+suspend fun laterItems(api: Kinopub): List<Item> =
+    api.bookmarkFolders().firstOrNull { isLaterFolder(it.title) }?.let { api.bookmarkItems(it.id) }.orEmpty()
+
+/** Кнопка «Посмотрю позже»: кладёт в папку или убирает из неё. */
+suspend fun setInLaterFolder(api: Kinopub, itemId: Int, inFolder: Boolean) {
+    val folder = api.bookmarkFolders().firstOrNull { isLaterFolder(it.title) }
+    when {
+        inFolder -> api.addBookmark(itemId, (folder ?: api.createFolder(LATER_FOLDER)).id)
+        folder != null -> api.removeBookmark(itemId, folder.id)
+    }
+}
+
+/** В каких папках приложения лежит фильм или сериал: от этого зависит вид кнопок карточки. */
+data class FolderMarks(val kids: Boolean, val later: Boolean)
+
+/** [kidsName] = null — режим ребёнка выключен, детская папка не учитывается. */
+suspend fun folderMarks(api: Kinopub, itemId: Int, kidsName: String?): FolderMarks {
+    val folders = api.itemFolders(itemId)
+    return FolderMarks(
+        kids = kidsName != null && folders.any { isKidsFolder(it.title, kidsName) },
+        later = folders.any { isLaterFolder(it.title) },
+    )
+}
 
 /** Кнопка «Для <имя>»: кладёт в детскую папку или убирает из неё. Папка создаётся при первом добавлении. */
 suspend fun setInKidsFolder(api: Kinopub, itemId: Int, inFolder: Boolean, name: String = KIDS_FOLDER_NEW) {

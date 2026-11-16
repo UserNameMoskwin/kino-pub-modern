@@ -23,7 +23,7 @@ class AppSettings(context: Context) {
     /** Убирает аниме из новинок. */
     var hideAnime by flag("hide_anime", false)
 
-    // Режим ребёнка: детские ряды на главной, кнопка «Для <имя>», дубляж без субтитров в детском.
+    // Режим ребёнка: детский ряд на главной, раздел в меню, детская кнопка в карточке, дубляж без субтитров в детском.
     var kidsMode by flag("kids_mode", true)
     var kidsName by text("kids_name", "Нелли")
 

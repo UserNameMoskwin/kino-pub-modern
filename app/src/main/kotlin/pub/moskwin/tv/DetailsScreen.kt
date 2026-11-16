@@ -21,6 +21,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
@@ -41,7 +42,8 @@ import pub.moskwin.core.Details
 import pub.moskwin.core.Kinopub
 import pub.moskwin.core.LoginRequiredException
 import pub.moskwin.core.Video
-import pub.moskwin.core.isInKidsFolder
+import pub.moskwin.core.folderMarks
+import pub.moskwin.core.setInLaterFolder
 import pub.moskwin.core.isKids
 import pub.moskwin.core.setInKidsFolder
 import kotlin.math.roundToInt
@@ -114,13 +116,17 @@ private fun Loaded(
     var notice by remember { mutableStateOf<String?>(null) }
     // null — ещё не знаем, лежит ли в детской папке.
     var inKidsFolder by remember { mutableStateOf<Boolean?>(null) }
+    var inLater by remember { mutableStateOf<Boolean?>(null) }
     var season by remember(details) {
         mutableIntStateOf(details.seasons.firstOrNull { resume in it.episodes }?.number ?: details.seasons.firstOrNull()?.number ?: 0)
     }
 
     LaunchedEffect(item.id) {
         runCatching { playFocus.requestFocus() }
-        if (kidsName != null) inKidsFolder = runCatching { isInKidsFolder(kinopub, item.id, kidsName) }.getOrNull()
+        runCatching { folderMarks(kinopub, item.id, kidsName) }.getOrNull()?.let {
+            inLater = it.later
+            if (kidsName != null) inKidsFolder = it.kids
+        }
     }
     val play = { chosen: Video? ->
         (chosen ?: details.allVideos.firstOrNull())?.let { video ->
@@ -161,8 +167,33 @@ private fun Loaded(
                 GlassButton(onClick = { play(resume) }, modifier = Modifier.focusRequester(playFocus)) {
                     Text(playLabel(details, resume))
                 }
-                // Режим ребёнка выключен — кнопок детского нет.
+                GlassButton(
+                    selected = inLater == true,
+                    onClick = {
+                        val target = inLater != true
+                        inLater = target
+                        scope.launch {
+                            try {
+                                setInLaterFolder(kinopub, item.id, target)
+                                onKidsChanged()
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                inLater = !target
+                                notice = "Не получилось изменить «Посмотрю позже»: ${e.message}"
+                            }
+                        }
+                    },
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        BookmarkIcon(filled = inLater == true)
+                        Text(if (inLater == true) "В «Посмотрю позже»" else "Посмотрю позже")
+                    }
+                }
+                // Режим ребёнка выключен — кнопок детского нет. Кнопка без имени: значок ребёнка
+                // и плюс, а когда мультфильм уже в детском избранном — галочка и заливка.
                 if (kidsName != null) GlassButton(
+                    selected = inKidsFolder == true,
                     onClick = {
                         val target = inKidsFolder != true
                         inKidsFolder = target
@@ -178,7 +209,12 @@ private fun Loaded(
                             }
                         }
                     },
-                ) { Text(if (inKidsFolder == true) "✓ Для $kidsName" else "Для $kidsName") }
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        ChildIcon()
+                        Text(if (inKidsFolder == true) "✓" else "+")
+                    }
+                }
                 // Исключение нужно только мультфильмам: остальное детским и так не считается.
                 if (kidsName != null && item.isCartoon && !item.isAnime) {
                     val marked = item.id in notKids

@@ -59,13 +59,14 @@ internal const val MENU_SEARCH = "search"
 internal const val MENU_PROFILE = "profile"
 internal const val MENU_SETTINGS = "settings"
 internal const val MENU_KIDS = "kids"
+internal const val MENU_LATER = "later"
 
 /**
  * Боковое меню: всегда на экране слева от содержимого. «Влево» с края содержимого
  * переводит фокус на пункт текущего раздела, «вправо» возвращает туда, где фокус был.
  * [current] — ключ открытого раздела. [rows] — фокус пунктов по ключам: по нему экран
  * переводит фокус в меню кнопкой «назад». [kidsName] — имя ребёнка: пункт с его избранным;
- * null — режим ребёнка выключен, пункта нет.
+ * null — режим ребёнка выключен, пункта нет. [onFocus] сообщает, в меню ли фокус.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -73,8 +74,10 @@ internal fun SideMenu(
     current: String,
     rows: MutableMap<String, FocusRequester>,
     kidsName: String?,
+    onFocus: (Boolean) -> Unit,
     onHome: () -> Unit,
     onSearch: () -> Unit,
+    onLater: () -> Unit,
     onKids: () -> Unit,
     onCatalog: (String, CatalogQuery) -> Unit,
     onProfile: () -> Unit,
@@ -96,6 +99,7 @@ internal fun SideMenu(
                     }
                 }
             }
+            .onFocusChanged { onFocus(it.hasFocus) }
             .focusGroup()
             .verticalScroll(rememberScrollState())
             .padding(vertical = 20.dp),
@@ -103,6 +107,7 @@ internal fun SideMenu(
         Logo(Modifier.padding(start = 20.dp, bottom = 18.dp))
         MenuRow("Главная", current == MENU_HOME, requester(MENU_HOME), onHome)
         MenuRow("Поиск", current == MENU_SEARCH, requester(MENU_SEARCH), onSearch)
+        MenuRow("Посмотрю позже", current == MENU_LATER, requester(MENU_LATER), onLater)
         if (kidsName != null) MenuRow(kidsName, current == MENU_KIDS, requester(MENU_KIDS), onKids)
         Spacer(Modifier.height(14.dp))
         SECTIONS.forEach { (title, query) ->

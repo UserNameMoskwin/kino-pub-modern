@@ -25,7 +25,6 @@ import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRestorer
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -43,6 +42,9 @@ import androidx.tv.material3.Text
 import androidx.tv.material3.darkColorScheme
 import pub.moskwin.core.ClientCredentials
 import pub.moskwin.core.Kinopub
+import pub.moskwin.core.LATER_FOLDER
+import pub.moskwin.core.kidsFavorites
+import pub.moskwin.core.laterItems
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -124,6 +126,7 @@ private sealed interface Screen {
     class Catalog(val title: String, val memory: CatalogMemory) : Screen
     data object Profile : Screen
     class Kids(val focus: FocusMemory = FocusMemory()) : Screen
+    class Later(val focus: FocusMemory = FocusMemory()) : Screen
 }
 
 /** Главный экран и стопка открытых поверх него: поиск, карточки, настройки. «Назад» снимает верхний. */
@@ -149,6 +152,7 @@ private fun Screens(kinopub: Kinopub, settings: AppSettings, resumes: Int, onLog
         is Screen.Catalog -> "catalog"
         Screen.Profile -> "profile"
         is Screen.Kids -> "kids"
+        is Screen.Later -> "later"
     }
     SideEffect { Perf.screen = screenName }
 
@@ -168,17 +172,20 @@ private fun Screens(kinopub: Kinopub, settings: AppSettings, resumes: Int, onLog
         Screen.Profile -> MENU_PROFILE
         Screen.Settings -> MENU_SETTINGS
         is Screen.Kids -> MENU_KIDS
+        is Screen.Later -> MENU_LATER
         else -> ""
     }
     val menuRows = remember { mutableMapOf<String, FocusRequester>() }
-    var contentFocused by remember { mutableStateOf(false) }
+    var menuFocused by remember { mutableStateOf(false) }
     // «Назад»: из карточки и плеера — на экран под ними; из содержимого раздела — фокус в меню;
     // из меню — на главную. С главной, когда фокус уже в меню, «назад» закрывает приложение.
+    // Условие — «фокус не в меню», а не «фокус в содержимом»: если фокус потерян (карточка
+    // под ним исчезла при обновлении данных), «назад» всё равно ведёт в меню, а не из приложения.
     // Окна и панели внутри экранов закрываются своими обработчиками: они объявлены позже и идут первыми.
-    BackHandler(enabled = !menuShown || contentFocused || top != null) {
+    BackHandler(enabled = !menuShown || !menuFocused || top != null) {
         when {
             !menuShown -> stack.removeAt(stack.lastIndex)
-            contentFocused -> runCatching { menuRows[menuKey]?.requestFocus() }
+            !menuFocused -> runCatching { menuRows[menuKey]?.requestFocus() }
             else -> open(null)
         }
     }
@@ -189,6 +196,7 @@ private fun Screens(kinopub: Kinopub, settings: AppSettings, resumes: Int, onLog
                     current = menuKey,
                     rows = menuRows,
                     kidsName = kidsName,
+                    onFocus = { menuFocused = it },
                     onHome = { open(null) },
                     onSearch = {
                         // Новый поиск начинается с чистого экрана, без прокрутки прошлого.
@@ -199,6 +207,7 @@ private fun Screens(kinopub: Kinopub, settings: AppSettings, resumes: Int, onLog
                         states.removeState("catalog")
                         open(Screen.Catalog(title, CatalogMemory().apply { this.query = query }))
                     },
+                    onLater = { open(Screen.Later()) },
                     onKids = { open(Screen.Kids()) },
                     onProfile = { open(Screen.Profile) },
                     onSettings = { open(Screen.Settings) },
@@ -218,7 +227,6 @@ private fun Screens(kinopub: Kinopub, settings: AppSettings, resumes: Int, onLog
                             }
                         }
                     }
-                    .onFocusChanged { contentFocused = it.hasFocus }
                     .focusRestorer()
                     .focusGroup(),
             ) {
@@ -256,11 +264,25 @@ private fun Screens(kinopub: Kinopub, settings: AppSettings, resumes: Int, onLog
                             )
                         }
                     }
-                    is Screen.Kids -> KidsScreen(
-                        kinopub, kidsName ?: "", refreshKey = kidsEdits, focus = top.focus,
-                        onOpen = { stack += Screen.Card(it) },
-                        onLoginRequired = onLoginRequired,
-                    )
+                    is Screen.Kids -> key(top) {
+                        val name = kidsName ?: ""
+                        FolderScreen(
+                            name, "Пока пусто. Мультфильм попадает сюда кнопкой с ребёнком в его карточке.",
+                            load = { kidsFavorites(kinopub, name) },
+                            refreshKey = kidsEdits, focus = top.focus,
+                            onOpen = { stack += Screen.Card(it) },
+                            onLoginRequired = onLoginRequired,
+                        )
+                    }
+                    is Screen.Later -> key(top) {
+                        FolderScreen(
+                            LATER_FOLDER, "Пока пусто. Фильм или сериал попадает сюда кнопкой «Посмотрю позже» в его карточке.",
+                            load = { laterItems(kinopub) },
+                            refreshKey = kidsEdits, focus = top.focus,
+                            onOpen = { stack += Screen.Card(it) },
+                            onLoginRequired = onLoginRequired,
+                        )
+                    }
                     Screen.Profile -> ProfileScreen(kinopub, settings, onLoggedOut = onLoginRequired)
                     is Screen.Player -> PlayerScreen(kinopub, settings, top.request, onExit = { stack.remove(top) })
                     Screen.Settings -> SettingsScreen(
