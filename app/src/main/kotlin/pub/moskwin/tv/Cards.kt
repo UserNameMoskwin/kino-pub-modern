@@ -1,5 +1,9 @@
 package pub.moskwin.tv
 
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -140,6 +144,63 @@ internal fun MediaCard(
             modifier = Modifier.padding(top = 10.dp),
         )
         Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/**
+ * Последняя карточка ряда на главном экране: стрелка вправо и подпись, куда она ведёт
+ * («Все фильмы»). Размер — как у карточек ряда, рамка фокуса та же.
+ */
+@Composable
+internal fun MoreCard(label: String, width: Dp, height: Dp, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(if (focused) 1.06f else 1f, tween(120), label = "focus")
+    Box(
+        modifier
+            .size(width, height)
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(interactionSource = null, indication = null, onClick = onClick),
+    ) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    shape = CardShape
+                    clip = true
+                }
+                .background(Color(0x1FFFFFFF))
+                .drawWithContent {
+                    drawContent()
+                    // Стрелка вправо: черта и наконечник, над подписью.
+                    val line = 3.dp.toPx()
+                    val half = 16.dp.toPx()
+                    val head = 9.dp.toPx()
+                    val cx = size.width / 2
+                    val cy = size.height / 2 - 14.dp.toPx()
+                    drawLine(Color.White, Offset(cx - half, cy), Offset(cx + half, cy), line, StrokeCap.Round)
+                    drawLine(Color.White, Offset(cx + half - head, cy - head), Offset(cx + half, cy), line, StrokeCap.Round)
+                    drawLine(Color.White, Offset(cx + half - head, cy + head), Offset(cx + half, cy), line, StrokeCap.Round)
+                    if (focused) {
+                        val stroke = 3.dp.toPx()
+                        drawRoundRect(
+                            Color.White,
+                            topLeft = Offset(stroke / 2, stroke / 2),
+                            size = Size(size.width - stroke, size.height - stroke),
+                            cornerRadius = CornerRadius(14.dp.toPx() - stroke / 2),
+                            style = Stroke(stroke),
+                        )
+                    }
+                }
+                .padding(horizontal = 8.dp),
+            verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                label, style = MaterialTheme.typography.bodyMedium, maxLines = 2,
+                textAlign = TextAlign.Center, modifier = Modifier.padding(top = 34.dp),
+            )
+        }
     }
 }
 

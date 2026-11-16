@@ -250,6 +250,13 @@ private fun Screens(kinopub: Kinopub, settings: AppSettings, resumes: Int, onLog
                             kidsName = kidsName,
                             focus = homeFocus,
                             onOpen = { stack += Screen.Card(it) },
+                            // Стрелка в конце ряда открывает тот же раздел, что и пункт меню.
+                            onSection = { section ->
+                                if (section == MENU_KIDS) open(Screen.Kids()) else SECTIONS.firstOrNull { it.first == section }?.let { (title, query) ->
+                                    states.removeState("catalog")
+                                    open(Screen.Catalog(title, CatalogMemory().apply { this.query = query }))
+                                }
+                            },
                             onLoginRequired = onLoginRequired,
                         )
                     }

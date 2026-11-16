@@ -1,5 +1,8 @@
 package pub.moskwin.tv
 
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.rememberUpdatedState
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -100,9 +103,14 @@ internal fun CatalogScreen(
         else lastOpened?.let { runCatching { chips.getValue(it).requestFocus() } }
     }
 
-    /** Загружает следующую страницу; [reset] — фильтры поменялись, начинаем с первой. */
-    suspend fun load(reset: Boolean) {
-        if (loading) return
+    // Растёт после каждой загруженной страницы и после неудачной попытки: по нему
+    // подгрузка проверяет заново, нужна ли ещё страница.
+    var loads by remember { mutableIntStateOf(0) }
+    val skipAnime by rememberUpdatedState(hideAnime)
+
+    /** Загружает следующую страницу; [reset] — фильтры поменялись, начинаем с первой. Возвращает, удалось ли. */
+    suspend fun load(reset: Boolean): Boolean {
+        if (loading) return true
         loading = true
         try {
             val next = if (reset) 1 else memory.page + 1
@@ -114,6 +122,8 @@ internal fun CatalogScreen(
             memory.query = query
             items = memory.items
             status = if (items.isEmpty()) "Ничего не нашлось — попробуйте убрать часть фильтров" else ""
+            loads++
+            return true
         } catch (e: CancellationException) {
             throw e
         } catch (e: LoginRequiredException) {
@@ -123,6 +133,7 @@ internal fun CatalogScreen(
         } finally {
             loading = false
         }
+        return false
     }
 
     LaunchedEffect(Unit) {
@@ -145,10 +156,24 @@ internal fun CatalogScreen(
         grid.scrollToItem(0)
         load(reset = true)
     }
-    // Подгрузка следующей страницы, когда до конца списка остаётся два ряда.
+    // Подгрузка следующей страницы, когда до конца показанного остаётся два-три ряда.
+    // Проверка идёт и при прокрутке, и после каждой загрузки. Раньше она шла только при
+    // прокрутке и сравнивала с числом загруженных, а не показанных обложек — и вставала:
+    // у самого низа прокручивать уже нечего, а при «Отключении аниме» показано меньше,
+    // чем загружено, и до порога было не дойти.
     LaunchedEffect(grid) {
-        snapshotFlow { grid.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }.collect { last ->
-            if (items.isNotEmpty() && last >= items.size - 12 && memory.page < memory.pages) load(reset = false)
+        snapshotFlow {
+            val last = grid.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            val shownCount = if (skipAnime) items.count { !it.isAnime } else items.size
+            Triple(last, shownCount, loads)
+        }.collect { (last, shownCount, _) ->
+            if (items.isNotEmpty() && last >= shownCount - 15 && memory.page < memory.pages) {
+                // Сбой сети: пауза и ещё попытка, пока человек стоит у конца списка.
+                if (!load(reset = false)) {
+                    delay(3_000)
+                    loads++
+                }
+            }
         }
     }
 

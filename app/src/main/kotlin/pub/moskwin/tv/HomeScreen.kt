@@ -75,6 +75,7 @@ internal fun HomeScreen(
     kidsName: String?,
     focus: FocusMemory,
     onOpen: (Int) -> Unit,
+    onSection: (String) -> Unit,
     onLoginRequired: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -112,7 +113,7 @@ internal fun HomeScreen(
         }
     }
     when {
-        home != null -> Rows(home, kidsName ?: "", focus, onOpen)
+        home != null -> Rows(home, kidsName ?: "", focus, onOpen, onSection)
         error != null -> Centered {
             Text("Не удалось загрузить: $error", style = MaterialTheme.typography.titleMedium)
             GlassButton(onClick = { error = null; reload++ }) { Text("Повторить") }
@@ -130,16 +131,23 @@ internal fun Centered(content: @Composable () -> Unit) {
     ) { content() }
 }
 
-private class HomeRow(val title: String, val cards: List<ContinueCard>?, val items: List<Item>?)
+/**
+ * Ряд главного экрана. [more] — подпись карточки-стрелки в конце ряда, [section] — раздел
+ * меню, который она открывает; у ряда «Продолжить просмотр» раздела нет, и стрелки тоже.
+ */
+private class HomeRow(
+    val title: String, val cards: List<ContinueCard>?, val items: List<Item>?,
+    val more: String? = null, val section: String = "",
+)
 
 @Composable
-private fun Rows(home: HomeData, kidsName: String, focus: FocusMemory, onOpen: (Int) -> Unit) {
+private fun Rows(home: HomeData, kidsName: String, focus: FocusMemory, onOpen: (Int) -> Unit, onSection: (String) -> Unit) {
     // Пустые ряды не показываются; порядок — из docs/spec.md.
     val rows = listOf(
         HomeRow("Продолжить просмотр", home.continueAdults, null),
-        HomeRow("$kidsName: продолжить", home.continueKids, null),
-        HomeRow("Новинки: фильмы", null, home.freshMovies),
-        HomeRow("Новинки: сериалы", null, home.freshSerials),
+        HomeRow("$kidsName: продолжить", home.continueKids, null, "Всё для: $kidsName", MENU_KIDS),
+        HomeRow("Новинки: фильмы", null, home.freshMovies, "Все фильмы", "Фильмы"),
+        HomeRow("Новинки: сериалы", null, home.freshSerials, "Все сериалы", "Сериалы"),
     ).filter { !(it.cards ?: it.items).isNullOrEmpty() }
 
     // Рядов всего четыре, поэтому по вертикали список не ленивый: ряды создаются один раз,
@@ -178,6 +186,16 @@ private fun Rows(home: HomeData, kidsName: String, focus: FocusMemory, onOpen: (
                                 Modifier.restoresFocus(focus, "${row.title}:${item.id}", rowIndex == 0 && index == 0),
                                 onClick = { onOpen(item.id) },
                             )
+                        }
+                    }
+                    // В конце ряда — стрелка в раздел целиком.
+                    row.more?.let { label ->
+                        item(key = "more", contentType = "more") {
+                            val wide = row.cards != null
+                            MoreCard(
+                                label, if (wide) 256.dp else 132.dp, if (wide) 144.dp else 198.dp,
+                                Modifier.restoresFocus(focus, "${row.title}:more"),
+                            ) { onSection(row.section) }
                         }
                     }
                 }

@@ -11,15 +11,26 @@ RED = (229, 9, 20)
 BG = (16, 16, 20)
 
 
+def ink(text, font):
+    """Границы нарисованных точек слова относительно начала строки на базовой линии."""
+    pad = font.size * 2
+    mask = Image.new('L', (pad * 6, pad * 3), 0)
+    ImageDraw.Draw(mask).text((pad, pad * 2), text, font=font, fill=255, anchor='ls')
+    left, top, right, bottom = mask.point(lambda v: 255 if v > 127 else 0).getbbox()
+    return left - pad, top - pad * 2, right - pad, bottom - pad * 2
+
+
 def logo(draw, cx, cy, size, stacked=False):
     """Знак с центром в (cx, cy). Плашка строится вокруг самих букв «pub» с равными полями
     сверху и снизу, поэтому слово стоит в ней ровно посередине."""
     font = ImageFont.truetype(FONT, size)
     mx, my = size * 0.34, size * 0.26
     gap = size * 0.20
-    # Границы букв относительно начала строки на базовой линии.
-    kl, kt, kr, kb = draw.textbbox((0, 0), 'kino', font=font, anchor='ls')
-    pl, pt, pr, pb = draw.textbbox((0, 0), 'pub', font=font, anchor='ls')
+    # Границы букв относительно начала строки на базовой линии. Меряются по самим
+    # нарисованным точкам: расчётные границы шрифта отличаются от них на пару точек, и
+    # слово в плашке получалось сдвинутым вбок.
+    kl, kt, kr, kb = ink('kino', font)
+    pl, pt, pr, pb = ink('pub', font)
     box_w, box_h = (pr - pl) + mx * 2, (pb - pt) + my * 2
     if stacked:
         total = (kb - kt) + gap + box_h
