@@ -141,7 +141,20 @@ private class DelayedAudioFactory(context: Context, private val delay: AudioDela
 private const val OFFSET_LIMIT = 100
 
 /** Что открыто поверх видео. */
-private enum class Panel { MENU, AUDIO, SUBTITLES, QUALITY, SPEED, SERVER, EXTERNAL, AUDIO_OFFSET, SUBTITLE_OFFSET }
+private enum class Panel { MENU, AUDIO, SUBTITLES, QUALITY, SPEED, PICTURE, SERVER, EXTERNAL, AUDIO_OFFSET, SUBTITLE_OFFSET }
+
+/**
+ * Как картинка вписана в экран: ключ для настроек, подпись и режим плеера. Нужно, когда
+ * формат фильма не совпадает с экраном и остаются чёрные поля.
+ */
+@OptIn(UnstableApi::class)
+private val PICTURES = listOf(
+    Triple("fit", "Целиком, с полями", AspectRatioFrameLayout.RESIZE_MODE_FIT),
+    Triple("width", "По ширине экрана", AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH),
+    Triple("height", "По высоте экрана", AspectRatioFrameLayout.RESIZE_MODE_FIXED_HEIGHT),
+    Triple("zoom", "Заполнить экран, обрезав края", AspectRatioFrameLayout.RESIZE_MODE_ZOOM),
+    Triple("fill", "Растянуть на весь экран", AspectRatioFrameLayout.RESIZE_MODE_FILL),
+)
 
 private val SPEEDS = listOf(0.75f, 1f, 1.25f, 1.5f, 2f)
 private const val CONTROLS_MS = 4_000L
@@ -193,6 +206,7 @@ internal fun PlayerScreen(
     var subtitle by remember { mutableStateOf<Int?>(null) }
     var quality by remember { mutableIntStateOf(settings.quality.toIntOrNull() ?: 0) }
     var reload by remember { mutableIntStateOf(0) }
+    var picture by remember { mutableStateOf(settings.picture) }
     var askedExternal by remember { mutableStateOf(false) }
     var loadedVideo by remember { mutableIntStateOf(-1) }
     // Сдвиги в десятых секунды: плюс — позже. Свои у каждой серии.
@@ -497,12 +511,13 @@ internal fun PlayerScreen(
             factory = { ctx ->
                 PlayerView(ctx).apply {
                     useController = false
-                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                     setKeepContentOnPlayerReset(true)
                     isFocusable = false
                     this.player = player
                 }
             },
+            // Режим картинки меняется из панели на ходу.
+            update = { it.resizeMode = PICTURES.firstOrNull { p -> p.first == picture }?.third ?: AspectRatioFrameLayout.RESIZE_MODE_FIT },
             modifier = Modifier.fillMaxSize(),
         )
         // Субтитры: реплика читается внутри update, поэтому её смена не пересобирает экран.
@@ -627,6 +642,7 @@ internal fun PlayerScreen(
                         PanelItem("Сдвиг субтитров", offsetLabel(subtitleOffset)) { panel = Panel.SUBTITLE_OFFSET }
                         PanelItem("Качество", if (quality == 0) "Авто (лучшее)" else "${quality}p") { panel = Panel.QUALITY }
                         PanelItem("Скорость", "${speed}×") { panel = Panel.SPEED }
+                        PanelItem("Картинка", PICTURES.firstOrNull { it.first == picture }?.second ?: "—") { panel = Panel.PICTURE }
                         PanelItem("Сервер", serverLabel ?: "—") { panel = Panel.SERVER }
                     }
                     Panel.AUDIO -> video.audios.forEachIndexed { i, track ->
@@ -658,6 +674,12 @@ internal fun PlayerScreen(
                             PanelItem(name, null, first = quality == h, marked = quality == h) {
                                 quality = h; applySelection(); close()
                             }
+                        }
+                    }
+                    // Выбор запоминается для всех фильмов: это свойство экрана, а не фильма.
+                    Panel.PICTURE -> PICTURES.forEach { (key, label, _) ->
+                        PanelItem(label, null, first = picture == key, marked = picture == key) {
+                            picture = key; settings.picture = key; close()
                         }
                     }
                     Panel.SPEED -> SPEEDS.forEach { s ->

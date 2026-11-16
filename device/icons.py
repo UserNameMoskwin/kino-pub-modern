@@ -1,3 +1,7 @@
+"""Рисует значок и баннер приложения: «kino» белым и «pub» на красной плашке.
+
+Запускать из корня проекта: python device/icons.py
+"""
 import os
 from PIL import Image, ImageDraw, ImageFont
 
@@ -8,28 +12,30 @@ BG = (16, 16, 20)
 
 
 def logo(draw, cx, cy, size, stacked=False):
-    """kino белым и pub на красной плашке; (cx, cy) — центр знака."""
+    """Знак с центром в (cx, cy). Плашка строится вокруг самих букв «pub» с равными полями
+    сверху и снизу, поэтому слово стоит в ней ровно посередине."""
     font = ImageFont.truetype(FONT, size)
-    pad = round(size * 0.18)
-    gap = round(size * 0.12)
-    kino = draw.textbbox((0, 0), 'kino', font=font)
-    pub = draw.textbbox((0, 0), 'pub', font=font)
-    asc, desc = font.getmetrics()
-    line = asc + desc
-    kw, pw = kino[2] - kino[0], pub[2] - pub[0]
-    box_w, box_h = pw + pad * 2, line + round(size * 0.06)
+    mx, my = size * 0.34, size * 0.26
+    gap = size * 0.20
+    # Границы букв относительно начала строки на базовой линии.
+    kl, kt, kr, kb = draw.textbbox((0, 0), 'kino', font=font, anchor='ls')
+    pl, pt, pr, pb = draw.textbbox((0, 0), 'pub', font=font, anchor='ls')
+    box_w, box_h = (pr - pl) + mx * 2, (pb - pt) + my * 2
     if stacked:
-        total = line + gap + box_h
+        total = (kb - kt) + gap + box_h
         top = cy - total / 2
-        draw.text((cx - kw / 2 - kino[0], top), 'kino', font=font, fill='white')
-        bx, by = cx - box_w / 2, top + line + gap
+        draw.text((cx - (kl + kr) / 2, top - kt), 'kino', font=font, fill='white', anchor='ls')
+        bx, by = cx - box_w / 2, top + (kb - kt) + gap
     else:
-        total = kw + gap + box_w
+        total = (kr - kl) + gap + box_w
         left = cx - total / 2
-        draw.text((left - kino[0], cy - line / 2), 'kino', font=font, fill='white')
-        bx, by = left + kw + gap, cy - box_h / 2
-    draw.rounded_rectangle((bx, by, bx + box_w, by + box_h), radius=round(size * 0.16), fill=RED)
-    draw.text((bx + pad - pub[0], by + (box_h - line) / 2), 'pub', font=font, fill='white')
+        bx, by = left + (kr - kl) + gap, cy - box_h / 2
+    # Базовая линия «pub»: буквы с полем my от верха плашки.
+    baseline = by + my - pt
+    if not stacked:
+        draw.text((left - kl, baseline), 'kino', font=font, fill='white', anchor='ls')
+    draw.rounded_rectangle((bx, by, bx + box_w, by + box_h), radius=size * 0.22, fill=RED)
+    draw.text((bx + mx - pl, baseline), 'pub', font=font, fill='white', anchor='ls')
 
 
 def save(folder, name, w, h, size, stacked):
@@ -41,7 +47,7 @@ def save(folder, name, w, h, size, stacked):
     im.resize((w, h), Image.LANCZOS).save(RES + folder + '/' + name + '.png', optimize=True)
 
 
-save('drawable-xhdpi', 'banner', 320, 180, 62, False)
-save('drawable-xxxhdpi', 'banner', 640, 360, 124, False)
-save('drawable-xhdpi', 'icon', 96, 96, 30, True)
-save('drawable-xxxhdpi', 'icon', 192, 192, 60, True)
+save('drawable-xhdpi', 'banner', 320, 180, 56, False)
+save('drawable-xxxhdpi', 'banner', 640, 360, 112, False)
+save('drawable-xhdpi', 'icon', 96, 96, 27, True)
+save('drawable-xxxhdpi', 'icon', 192, 192, 54, True)

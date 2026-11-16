@@ -33,6 +33,8 @@ class AppSettings(context: Context) {
     // Плеер
     /** `best`, `1080`, `720` или `480`. */
     var quality by text("quality", QUALITIES.first().first)
+    /** Как картинка вписана в экран: ключ из PICTURES в плеере. */
+    var picture by text("picture", "fit")
     var askPlayer by flag("ask_player", false)
     var smallBuffer by flag("small_buffer", false)
     var preferAc3 by flag("prefer_ac3", false)

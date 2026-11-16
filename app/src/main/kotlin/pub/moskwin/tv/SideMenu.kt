@@ -133,8 +133,9 @@ internal fun Logo(modifier: Modifier = Modifier) {
         Text("kino", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color.White)
         Text(
             "pub", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color.White,
-            modifier = Modifier.padding(start = 3.dp).background(Accent, RoundedCornerShape(5.dp))
-                .padding(horizontal = 5.dp),
+            // Поля плашки заданы явно: слово стоит в ней посередине, а не впритык к краям.
+            modifier = Modifier.padding(start = 6.dp).background(Accent, RoundedCornerShape(7.dp))
+                .padding(horizontal = 9.dp, vertical = 3.dp),
         )
     }
 }
