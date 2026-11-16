@@ -44,5 +44,5 @@ kinopub.clientSecret=<ключ Kodi-плагина>
 `apk/moskwin-pub.apk` — release-сборка, на которую ведёт ссылка в `README.md`. После
 изменений её нужно обновить: `gradlew :app:assembleRelease` и скопировать
 `app/build/outputs/apk/release/app-release.apk` в `apk/moskwin-pub.apk`. В сборку
-зашит ключ из `local.properties`, поэтому репозиторий должен оставаться закрытым.
+зашит ключ из `local.properties`: репозиторий открытый, и ключ доступен всем, кто скачает APK.
 Снимки экрана для `README.md` лежат в `docs/screenshots/`.

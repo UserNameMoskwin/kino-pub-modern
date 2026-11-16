@@ -1,8 +1,8 @@
-# moskwin-pub
+# kino-pub-modern
 
 Приложение для просмотра kino.pub на телевизоре с Android TV.
 
-## [⬇ Скачать приложение (APK, 2,5 МБ)](https://github.com/UserNameMoskwin/moskwin-pub/raw/claude/sharp-edison-fpgtyq/apk/moskwin-pub.apk)
+## [⬇ Скачать приложение (APK, 2,5 МБ)](https://github.com/UserNameMoskwin/kino-pub-modern/raw/claude/sharp-edison-fpgtyq/apk/moskwin-pub.apk)
 
 Нужны телевизор или приставка с Android TV 8 или новее и действующая подписка kino.pub.
 
