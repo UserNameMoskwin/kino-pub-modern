@@ -42,7 +42,7 @@ import coil.compose.AsyncImage
 import pub.moskwin.core.Item
 
 internal val Dim = Color(0xFF9A9A9A)
-internal val Accent = Color(0xFFE50914)
+internal val Accent = Color(0xFFE00206)
 internal val Edge = 48.dp
 private val CardShape = RoundedCornerShape(14.dp)
 

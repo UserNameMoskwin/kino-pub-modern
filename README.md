@@ -2,7 +2,7 @@
 
 Приложение для просмотра kino.pub на телевизоре с Android TV.
 
-## [⬇ Скачать приложение, версия 1.0 (APK, 2,4 МБ)](https://github.com/UserNameMoskwin/kino-pub-modern/raw/main/apk/kino-pub-1.0.apk)
+## [⬇ Скачать приложение, версия 1.1 (APK, 2,5 МБ)](https://github.com/UserNameMoskwin/kino-pub-modern/raw/main/apk/kino-pub-1.1.apk)
 
 Нужны телевизор или приставка с Android TV 8 или новее и действующая подписка kino.pub.
 

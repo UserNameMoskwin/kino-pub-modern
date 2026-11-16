@@ -1,6 +1,8 @@
 package pub.moskwin.tv
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Box
@@ -126,18 +128,14 @@ internal fun SideMenu(
 
 internal val MenuWidth = 188.dp
 
-/** Знак приложения: «kino» белым и «pub» на красной плашке. */
+/**
+ * Знак приложения: «KINO» белым и «PUB» на красной плашке. Это картинка, а не текст:
+ * знак набран шрифтом Inter Black, которого в приложении нет. Рисует её `device/icons.py`
+ * — тот же скрипт, что делает значок и баннер, поэтому знак везде одинаковый.
+ */
 @Composable
 internal fun Logo(modifier: Modifier = Modifier) {
-    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        Text("kino", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color.White)
-        Text(
-            "pub", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color.White,
-            // Поля плашки заданы явно: слово стоит в ней посередине, а не впритык к краям.
-            modifier = Modifier.padding(start = 6.dp).background(Accent, RoundedCornerShape(7.dp))
-                .padding(horizontal = 9.dp, vertical = 3.dp),
-        )
-    }
+    Image(painterResource(R.drawable.logo), contentDescription = null, modifier = modifier.height(30.dp))
 }
 
 @Composable
