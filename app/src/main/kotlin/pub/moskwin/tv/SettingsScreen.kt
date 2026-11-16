@@ -101,11 +101,7 @@ internal fun SettingsScreen(
     /** Окно новой версии: список изменений и установка. */
     fun showUpdate(version: AppVersion) {
         dialog = Dialog.Update(version) {
-            scope.launch {
-                status = "Скачиваю обновление…"
-                updater.install()
-                status = updater.problem?.let { "Обновление не скачалось: $it" }
-            }
+            scope.launch { updater.install() }
         }
     }
     var firstFocus by remember { mutableStateOf(true) }
@@ -182,13 +178,28 @@ internal fun SettingsScreen(
         }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 28.dp)) {
 
-            updater.available?.let { version ->
-                Header("Обновление")
+            // Состояние обновления всегда первой строкой: есть новая версия — она с красной
+            // точкой и ведёт к установке; нет — строка говорит, что версия актуальная, и по
+            // нажатию проверяет ещё раз. Ход проверки и загрузки и их ошибки пишутся в ней же.
+            Header("Обновление")
+            val newer = updater.available
+            if (newer != null) {
                 row(
-                    "update-new", "Доступна версия ${version.versionName}",
-                    updater.progress?.let { "Загрузка ${(it * 100).roundToInt()} %" } ?: "Что нового и установка",
+                    "update-new", "Доступна версия ${newer.versionName}",
+                    updater.progress?.let { "Загрузка ${(it * 100).roundToInt()} %" }
+                        ?: updater.problem?.let { "Не скачалось: $it. Нажмите, чтобы повторить" }
+                        ?: "Нажмите, чтобы посмотреть изменения и установить",
                     mark = true,
-                ) { showUpdate(version) }
+                ) { showUpdate(newer) }
+            } else {
+                row(
+                    "update-new", "У вас актуальная версия ${BuildConfig.VERSION_NAME}",
+                    when {
+                        updater.checking -> "Проверяю…"
+                        updater.checkProblem != null -> "Проверить не удалось: ${updater.checkProblem}. Нажмите, чтобы повторить"
+                        else -> "Нажмите, чтобы проверить ещё раз"
+                    },
+                ) { scope.launch { updater.check() } }
             }
 
             Header("Настройки устройства")
@@ -294,13 +305,6 @@ internal fun SettingsScreen(
 
             Header("О приложении")
             row("version", "Версия", BuildConfig.VERSION_NAME) {}
-            row("update", "Проверить обновления", updater.available?.let { "Доступна версия ${it.versionName}" }) {
-                val version = updater.available
-                if (version != null) showUpdate(version) else scope.launch {
-                    status = "Проверяю…"
-                    status = updater.check()
-                }
-            }
             row("posters", "Удалить закэшированные постеры") {
                 val loader = Coil.imageLoader(context)
                 loader.memoryCache?.clear()
@@ -318,7 +322,6 @@ internal fun SettingsScreen(
 
 /** Что делает каждая настройка — мелкой строкой под её названием. Ключи — как у строк экрана. */
 private val HINTS = mapOf(
-    "update-new" to "Список изменений и установка новой версии",
     "name" to "Под этим именем телевизор виден в списке устройств на сайте kino.pub",
     "speed" to "Замеряет скорость загрузки с выбранного видеосервера",
     "server" to "Откуда идёт видео. Если оно тормозит, попробуйте другой сервер",
@@ -336,7 +339,6 @@ private val HINTS = mapOf(
     "stats" to "Поверх видео: разрешение, кодек, скорость потока и запас буфера",
     "captions" to "Цвет и размер субтитров берутся из настроек телевизора, а не из приложения",
     "captions-system" to "Настройки телевизора, в которых задаётся вид субтитров",
-    "update" to "Сравнивает установленную версию с последней выпущенной",
     "posters" to "Освобождает место на телевизоре; обложки потом загрузятся заново",
     "id" to "Номер этого телевизора в вашем аккаунте kino.pub",
 )

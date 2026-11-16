@@ -32,20 +32,29 @@ internal class Updater(private val context: Context) {
     var problem by mutableStateOf<String?>(null)
         private set
 
-    /** Проверяет, вышла ли новая версия. Возвращает текст итога для экрана настроек. */
-    suspend fun check(): String = try {
-        val latest = fetchAppVersion(VERSION_URL)
-        if (latest.versionCode > BuildConfig.VERSION_CODE) {
-            available = latest
-            "Доступна версия ${latest.versionName}"
-        } else {
-            available = null
-            "Установлена последняя версия"
+    /** Идёт проверка новой версии. */
+    var checking by mutableStateOf(false)
+        private set
+
+    /** Почему последняя проверка не удалась; null — удалась или ещё не шла. */
+    var checkProblem by mutableStateOf<String?>(null)
+        private set
+
+    /** Проверяет, вышла ли новая версия. Итог — в [available], [checking] и [checkProblem]. */
+    suspend fun check() {
+        if (checking) return
+        checking = true
+        try {
+            val latest = fetchAppVersion(VERSION_URL)
+            available = latest.takeIf { it.versionCode > BuildConfig.VERSION_CODE }
+            checkProblem = null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            checkProblem = e.message ?: e.javaClass.simpleName
+        } finally {
+            checking = false
         }
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        "Проверить обновления не удалось: ${e.message ?: e.javaClass.simpleName}"
     }
 
     /** Скачивает новую версию и открывает системное окно установки. */
@@ -54,14 +63,22 @@ internal class Updater(private val context: Context) {
         problem = null
         progress = 0f
         try {
-            val file = File(File(context.cacheDir, "updates"), "kino-pub.apk")
-            // Имя файла — из описания версии: в нём стоит её номер.
-            downloadFile("$BASE/${(available ?: return).apkName}", file) { progress = it }
+            // Имя файла — из описания версии: в нём стоит её номер. Прошлые загрузки удаляются.
+            val name = (available ?: return).apkName
+            val folder = File(context.cacheDir, "updates")
+            folder.listFiles()?.forEach { if (it.name != name) it.delete() }
+            val file = File(folder, name)
+            downloadFile("$BASE/$name", file) { progress = it }
             val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
             context.startActivity(
                 Intent(Intent.ACTION_VIEW)
                     .setDataAndType(uri, "application/vnd.android.package-archive")
-                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK),
+                    // CLEAR_TASK обязателен: системный установщик держит своё окно от прошлой
+                    // установки («Приложение установлено — Открыть»), и без этого флага вместо
+                    // нового запроса показывал его. Имя файла с версией меняет и адрес запроса.
+                    .addFlags(
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK,
+                    ),
             )
         } catch (e: CancellationException) {
             throw e
