@@ -12,7 +12,7 @@ val local = Properties().apply {
 }
 // Номер версии — в apk/version.json: тот же файл читает установленное приложение, когда
 // проверяет обновления.
-val versionFile = rootProject.file("apk/version.json").readText()
+val versionFile = rootProject.file("../apk/version.json").readText()
 fun versionField(name: String) =
     Regex("\"$name\"\\s*:\\s*\"?([^\",}\\s]+)").find(versionFile)?.groupValues?.get(1) ?: error("в apk/version.json нет $name")
 

@@ -2,12 +2,12 @@
 
 Запускать из корня проекта: python device/icons.py
 Получаются баннер и значок для экрана телевизора и знак для бокового меню приложения.
-Шрифт лежит рядом, в device/fonts (лицензия OFL).
+Шрифт лежит рядом, в device/fonts (лицензия OFL). Картинки ложатся в source/app/src/main/res/.
 """
 import os
 from PIL import Image, ImageDraw, ImageFont
 
-RES = 'app/src/main/res/'
+RES = 'source/app/src/main/res/'
 FONT = 'device/fonts/Inter-Variable.ttf'
 RED = (0xE0, 0x02, 0x06, 255)
 WHITE = (255, 255, 255, 255)

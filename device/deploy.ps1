@@ -10,10 +10,11 @@ $adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
 $project = Split-Path $PSScriptRoot -Parent
 $variant = if ($Debug) { 'debug' } else { 'release' }
 
-& "$project\gradlew.bat" -p $project ":app:assemble$variant" --console=plain -q
+$source = "$project\source"
+& "$source\gradlew.bat" -p $source ":app:assemble$variant" --console=plain -q
 if ($LASTEXITCODE -ne 0) { throw 'Сборка не удалась' }
 
 & $adb connect $Tv | Out-Null
-& $adb -s $Tv install -r "$project\app\build\outputs\apk\$variant\app-$variant.apk"
+& $adb -s $Tv install -r "$source\app\build\outputs\apk\$variant\app-$variant.apk"
 if ($LASTEXITCODE -ne 0) { throw 'Установка не удалась' }
 & $adb -s $Tv shell cmd package compile -m speed -f pub.moskwin.tv

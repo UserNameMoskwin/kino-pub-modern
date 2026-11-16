@@ -22,11 +22,12 @@ $file = "kino-pub-$($version.versionName).apk"
 $version | Add-Member -NotePropertyName file -NotePropertyValue $file -Force
 [IO.File]::WriteAllText($versionPath, (($version | ConvertTo-Json) -replace "`r`n", "`n") + "`n", $utf8)
 
-& "$project\gradlew.bat" -p $project ':core:test' ':app:assembleRelease' --console=plain -q
+$source = "$project\source"
+& "$source\gradlew.bat" -p $source ':core:test' ':app:assembleRelease' --console=plain -q
 if ($LASTEXITCODE -ne 0) { throw 'Сборка или тесты не прошли' }
 
 Get-ChildItem "$project\apk" -Filter 'kino-pub-*.apk' | Remove-Item
-Copy-Item "$project\app\build\outputs\apk\release\app-release.apk" "$project\apk\$file" -Force
+Copy-Item "$source\app\build\outputs\apk\release\app-release.apk" "$project\apk\$file" -Force
 
 $readmePath = "$project\README.md"
 $readme = [IO.File]::ReadAllText($readmePath, $utf8)

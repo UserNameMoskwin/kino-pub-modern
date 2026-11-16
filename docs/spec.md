@@ -8,7 +8,7 @@
 - Пишем с нуля, чужие клиенты не форкаем.
 - Ключ приложения — публичный от Kodi-плагина (`client_id=xbmc`). Если отзовут,
   запасной вариант — официальное приложение.
-- Список адресов API с автопереключением (сделано в `core/`).
+- Список адресов API с автопереключением (сделано в `source/core/`).
 - HDR / Dolby Vision и строку «Продолжить» на главном экране Google TV не делаем.
 - Все записи идут в настоящий аккаунт, песочницы нет.
 - Рейтинг Кинопоиска не показываем нигде. Только IMDb.
@@ -314,7 +314,7 @@
 ## Окружение сборки
 
 - Для Android SDK в сетевых настройках окружения нужен `dl.google.com`.
-- Нужны пакеты SDK `platforms;android-35` и `build-tools;35.0.0`; ключ клиента — в `local.properties`
-  (см. README). Сборка — `gradlew` с JDK 17–21 в `JAVA_HOME`.
+- Нужны пакеты SDK `platforms;android-35` и `build-tools;35.0.0`; ключ клиента — в `source/local.properties`
+  (см. `docs/development.md`). Сборка — `source/gradlew` с JDK 17–21 в `JAVA_HOME`.
 - Maven Central ограничивает частоту запросов; при сбоях загрузки зависимостей помогает
   зеркало `https://maven-central.storage-download.googleapis.com/maven2/` первым в списке.

@@ -1,0 +1,14 @@
+# Страница проекта на GitHub Pages: README без списка файлов.
+# Публикуется из ветки main, папка / (корень). Код и служебные файлы на страницу не попадают.
+title: KinoPub для Android TV
+description: Приложение для просмотра kino.pub на Android TV и Google TV
+lang: ru
+theme: jekyll-theme-primer
+exclude:
+  - source
+  - device
+  - creds
+  - apk
+  - CLAUDE.md
+  - docs/spec.md
+  - docs/kinoapi
