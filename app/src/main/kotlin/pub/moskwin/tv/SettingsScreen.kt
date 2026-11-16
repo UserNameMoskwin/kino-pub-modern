@@ -78,6 +78,7 @@ private sealed interface Dialog {
 internal fun SettingsScreen(
     kinopub: Kinopub,
     settings: AppSettings,
+    updater: Updater,
     onChanged: () -> Unit,
     onLoggedOut: () -> Unit,
 ) {
@@ -265,6 +266,18 @@ internal fun SettingsScreen(
 
             Header("О приложении")
             row("version", "Версия", BuildConfig.VERSION_NAME) {}
+            row("update", "Проверить обновления", updater.available?.let { "Доступна версия ${it.versionName} — нажмите, чтобы обновить" }) {
+                scope.launch {
+                    if (updater.available != null) {
+                        status = "Скачиваю обновление…"
+                        updater.install()
+                        status = updater.problem?.let { "Обновление не скачалось: $it" }
+                    } else {
+                        status = "Проверяю…"
+                        status = updater.check()
+                    }
+                }
+            }
             row("posters", "Удалить закэшированные постеры") {
                 val loader = Coil.imageLoader(context)
                 loader.memoryCache?.clear()

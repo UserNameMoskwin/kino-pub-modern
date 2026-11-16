@@ -60,13 +60,15 @@ internal const val MENU_PROFILE = "profile"
 internal const val MENU_SETTINGS = "settings"
 internal const val MENU_KIDS = "kids"
 internal const val MENU_LATER = "later"
+private const val MENU_UPDATE = "update"
 
 /**
  * Боковое меню: всегда на экране слева от содержимого. «Влево» с края содержимого
  * переводит фокус на пункт текущего раздела, «вправо» возвращает туда, где фокус был.
  * [current] — ключ открытого раздела. [rows] — фокус пунктов по ключам: по нему экран
  * переводит фокус в меню кнопкой «назад». [kidsName] — имя ребёнка: пункт с его избранным;
- * null — режим ребёнка выключен, пункта нет. [onFocus] сообщает, в меню ли фокус.
+ * null — режим ребёнка выключен, пункта нет. [updateLabel] — подпись пункта обновления;
+ * null — обновлять нечего. [onFocus] сообщает, в меню ли фокус.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -74,6 +76,7 @@ internal fun SideMenu(
     current: String,
     rows: MutableMap<String, FocusRequester>,
     kidsName: String?,
+    updateLabel: String?,
     onFocus: (Boolean) -> Unit,
     onHome: () -> Unit,
     onSearch: () -> Unit,
@@ -82,6 +85,7 @@ internal fun SideMenu(
     onCatalog: (String, CatalogQuery) -> Unit,
     onProfile: () -> Unit,
     onSettings: () -> Unit,
+    onUpdate: () -> Unit,
 ) {
     fun requester(key: String) = rows.getOrPut(key) { FocusRequester() }
     Column(
@@ -111,11 +115,16 @@ internal fun SideMenu(
         if (kidsName != null) MenuRow(kidsName, current == MENU_KIDS, requester(MENU_KIDS), onKids)
         Spacer(Modifier.height(14.dp))
         SECTIONS.forEach { (title, query) ->
-            MenuRow(title, current == title, requester(title)) { onCatalog(title, query) }
+            MenuRow(title, current == title, requester(title), onClick = { onCatalog(title, query) })
         }
         Spacer(Modifier.height(14.dp))
         MenuRow("Профиль", current == MENU_PROFILE, requester(MENU_PROFILE), onProfile)
         MenuRow("Настройки", current == MENU_SETTINGS, requester(MENU_SETTINGS), onSettings)
+        // Вышла новая версия: пункт появляется сам и исчезает после обновления.
+        if (updateLabel != null) {
+            Spacer(Modifier.height(14.dp))
+            MenuRow(updateLabel, false, requester(MENU_UPDATE), onUpdate, accent = true)
+        }
     }
 }
 
@@ -135,7 +144,7 @@ internal fun Logo(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun MenuRow(title: String, marked: Boolean, requester: FocusRequester, onClick: () -> Unit) {
+private fun MenuRow(title: String, marked: Boolean, requester: FocusRequester, onClick: () -> Unit, accent: Boolean = false) {
     var focused by remember { mutableStateOf(false) }
     Box(
         Modifier
@@ -161,6 +170,7 @@ private fun MenuRow(title: String, marked: Boolean, requester: FocusRequester, o
             color = when {
                 focused -> Color(0xFF101014)
                 marked -> Foreground
+                accent -> Color(0xFFFF6B70)
                 else -> Color(0xFFB4B4BE)
             },
             maxLines = 1, overflow = TextOverflow.Ellipsis,
