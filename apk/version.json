@@ -1,6 +1,6 @@
 {
-  "versionCode": 8,
-  "versionName": "1.1",
-  "notes": "• Новый знак приложения: KINO PUB заглавными, в значке, на экране телевизора и в меню.",
-  "file": "kino-pub-1.1.apk"
+  "versionCode": 9,
+  "versionName": "1.2",
+  "notes": "• Приложение называется KinoPub.\n• Телевизор виден в списке устройств аккаунта как «KinoPub» с названием модели.",
+  "file": "kino-pub-1.2.apk"
 }

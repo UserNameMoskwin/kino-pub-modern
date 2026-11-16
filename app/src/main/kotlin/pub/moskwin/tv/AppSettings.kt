@@ -17,7 +17,7 @@ class AppSettings(context: Context) {
     private fun text(key: String, default: String) = Stored(prefs.getString(key, default) ?: default) { prefs.edit().putString(key, it).apply() }
 
     /** Название устройства в списке на сайте. */
-    var deviceName by text("device_name", "moskwin-pub (${Build.MODEL})")
+    var deviceName by text("device_name", "KinoPub (${Build.MODEL})")
 
     // Интерфейс
     /** Убирает аниме из новинок. */
