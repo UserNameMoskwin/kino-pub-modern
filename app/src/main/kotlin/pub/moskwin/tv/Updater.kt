@@ -63,8 +63,15 @@ internal class Updater(private val context: Context) {
         problem = null
         progress = 0f
         try {
+            // Описание версии читается заново: пока приложение было открыто, могла выйти
+            // следующая, и файл прежней с сервера уже удалён. Не вышло прочитать — берём
+            // то, что знали.
+            val latest = runCatching { fetchAppVersion(VERSION_URL) }.getOrNull()
+                ?.takeIf { it.versionCode > BuildConfig.VERSION_CODE }
+                ?.also { available = it }
+                ?: available ?: return
             // Имя файла — из описания версии: в нём стоит её номер. Прошлые загрузки удаляются.
-            val name = (available ?: return).apkName
+            val name = latest.apkName
             val folder = File(context.cacheDir, "updates")
             folder.listFiles()?.forEach { if (it.name != name) it.delete() }
             val file = File(folder, name)

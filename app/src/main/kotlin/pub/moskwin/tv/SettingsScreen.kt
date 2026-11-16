@@ -99,6 +99,8 @@ internal fun SettingsScreen(
     // Вышло обновление — экран открывается на нём.
     val firstRow = if (updater.available != null) "update-new" else "name"
     /** Окно новой версии: список изменений и установка. */
+    // Настройки открыли — версия проверяется заново: с запуска приложения могла выйти новая.
+    LaunchedEffect(Unit) { updater.check() }
     fun showUpdate(version: AppVersion) {
         dialog = Dialog.Update(version) {
             scope.launch { updater.install() }

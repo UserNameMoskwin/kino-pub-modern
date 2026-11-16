@@ -8,7 +8,7 @@ Google TV. Работает с обычным аккаунтом и подпис
 просмотра и закладки берутся из вашего аккаунта, поэтому всё, что вы смотрите здесь,
 видно и на сайте, и в других приложениях kino.pub.
 
-## [⬇ Скачать приложение, версия 1.2 (APK, 2,5 МБ)](https://github.com/UserNameMoskwin/kino-pub-modern/raw/main/apk/kino-pub-1.2.apk)
+## [⬇ Скачать приложение, версия 1.3 (APK, 2,5 МБ)](https://github.com/UserNameMoskwin/kino-pub-modern/raw/main/apk/kino-pub-1.3.apk)
 
 Что нужно:
 
