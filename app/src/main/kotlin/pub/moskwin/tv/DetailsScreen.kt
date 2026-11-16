@@ -56,6 +56,7 @@ internal fun DetailsScreen(
     kinopub: Kinopub,
     itemId: Int,
     notKids: Set<Int>,
+    kidsName: String?,
     onNotKids: (Int, Boolean) -> Unit,
     onKidsChanged: () -> Unit,
     onPlay: (PlayRequest) -> Unit,
@@ -87,7 +88,7 @@ internal fun DetailsScreen(
 
     val loaded = details
     when {
-        loaded != null -> Loaded(kinopub, loaded, resume, notKids, onNotKids, onKidsChanged, onPlay)
+        loaded != null -> Loaded(kinopub, loaded, resume, notKids, kidsName, onNotKids, onKidsChanged, onPlay)
         error != null -> Centered {
             Text("Не удалось открыть: $error", style = MaterialTheme.typography.titleMedium)
             GlassButton(onClick = { attempt++ }) { Text("Повторить") }
@@ -102,6 +103,7 @@ private fun Loaded(
     details: Details,
     resume: Video?,
     notKids: Set<Int>,
+    kidsName: String?,
     onNotKids: (Int, Boolean) -> Unit,
     onKidsChanged: () -> Unit,
     onPlay: (PlayRequest) -> Unit,
@@ -118,12 +120,12 @@ private fun Loaded(
 
     LaunchedEffect(item.id) {
         runCatching { playFocus.requestFocus() }
-        inKidsFolder = runCatching { isInKidsFolder(kinopub, item.id) }.getOrNull()
+        if (kidsName != null) inKidsFolder = runCatching { isInKidsFolder(kinopub, item.id, kidsName) }.getOrNull()
     }
     val play = { chosen: Video? ->
         (chosen ?: details.allVideos.firstOrNull())?.let { video ->
             // Детское — по тем же признакам, что и на главном экране: от этого зависят озвучка и субтитры.
-            val kids = isKids(item.isCartoon, item.isAnime, inKidsFolder == true, item.id in notKids)
+            val kids = kidsName != null && isKids(item.isCartoon, item.isAnime, inKidsFolder == true, item.id in notKids)
             onPlay(PlayRequest(details, video, kids))
         }
         Unit
@@ -159,13 +161,14 @@ private fun Loaded(
                 GlassButton(onClick = { play(resume) }, modifier = Modifier.focusRequester(playFocus)) {
                     Text(playLabel(details, resume))
                 }
-                GlassButton(
+                // Режим ребёнка выключен — кнопок детского нет.
+                if (kidsName != null) GlassButton(
                     onClick = {
                         val target = inKidsFolder != true
                         inKidsFolder = target
                         scope.launch {
                             try {
-                                setInKidsFolder(kinopub, item.id, target)
+                                setInKidsFolder(kinopub, item.id, target, kidsName)
                                 onKidsChanged()
                             } catch (e: CancellationException) {
                                 throw e
@@ -175,9 +178,9 @@ private fun Loaded(
                             }
                         }
                     },
-                ) { Text(if (inKidsFolder == true) "✓ Для Нелли" else "Для Нелли") }
+                ) { Text(if (inKidsFolder == true) "✓ Для $kidsName" else "Для $kidsName") }
                 // Исключение нужно только мультфильмам: остальное детским и так не считается.
-                if (item.isCartoon && !item.isAnime) {
+                if (kidsName != null && item.isCartoon && !item.isAnime) {
                     val marked = item.id in notKids
                     GlassButton(onClick = { onNotKids(item.id, !marked) }) {
                         Text(if (marked) "✓ Не детское" else "Не детское")

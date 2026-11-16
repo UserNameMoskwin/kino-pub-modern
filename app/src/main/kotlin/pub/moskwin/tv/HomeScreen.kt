@@ -72,12 +72,9 @@ internal fun HomeScreen(
     refreshKey: Int,
     notKids: Set<Int>,
     hideAnime: Boolean,
+    kidsName: String?,
     focus: FocusMemory,
     onOpen: (Int) -> Unit,
-    onSearch: () -> Unit,
-    onCatalog: (CatalogQuery) -> Unit,
-    onProfile: () -> Unit,
-    onSettings: () -> Unit,
     onLoginRequired: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -88,10 +85,10 @@ internal fun HomeScreen(
     var reload by remember { mutableStateOf(0) }
     remember { focus.pending = true }
 
-    LaunchedEffect(refreshKey, reload, notKids, hideAnime) {
+    LaunchedEffect(refreshKey, reload, notKids, hideAnime, kidsName) {
         try {
             // Разбор ответов (около мегабайта JSON) — не в потоке интерфейса.
-            val fresh = Perf.timed("home") { withContext(Dispatchers.Default) { loadHome(kinopub, notKids, hideAnime) } }
+            val fresh = Perf.timed("home") { withContext(Dispatchers.Default) { loadHome(kinopub, notKids, hideAnime, kidsName) } }
             error = null
             // Те же данные, что на экране, не пересобирают ряды.
             if (fresh != data) {
@@ -114,42 +111,13 @@ internal fun HomeScreen(
             Perf.homeShown(fromCache)
         }
     }
-    var menuOpen by remember { mutableStateOf(false) }
-    var menuWasOpen by remember { mutableStateOf(false) }
-    val menuButton = remember { FocusRequester() }
-    val focusManager = LocalFocusManager.current
-    // Меню закрыли без перехода — фокус возвращается на кнопку меню.
-    LaunchedEffect(menuOpen) {
-        if (menuOpen) menuWasOpen = true
-        else if (menuWasOpen) runCatching { menuButton.requestFocus() }
-    }
-    Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize()) {
-            TopBar(home?.device, focus, menuButton, onMenu = { menuOpen = true }, onSearch = onSearch)
-            when {
-                // «Влево» с крайней левой карточки открывает меню: дальше двигаться некуда.
-                home != null -> Box(
-                    Modifier.onKeyEvent { event ->
-                        if (event.key != Key.DirectionLeft || event.type != KeyEventType.KeyDown) return@onKeyEvent false
-                        if (!focusManager.moveFocus(FocusDirection.Left)) menuOpen = true
-                        true
-                    },
-                ) { Rows(home, focus, onOpen) }
-                error != null -> Centered {
-                    Text("Не удалось загрузить: $error", style = MaterialTheme.typography.titleMedium)
-                    GlassButton(onClick = { error = null; reload++ }) { Text("Повторить") }
-                }
-                else -> Centered { Text("Загрузка…", style = MaterialTheme.typography.titleLarge, color = Dim) }
-            }
+    when {
+        home != null -> Rows(home, kidsName ?: "", focus, onOpen)
+        error != null -> Centered {
+            Text("Не удалось загрузить: $error", style = MaterialTheme.typography.titleMedium)
+            GlassButton(onClick = { error = null; reload++ }) { Text("Повторить") }
         }
-        if (menuOpen) {
-            Menu(
-                kinopub, home?.device,
-                onClose = { menuOpen = false },
-                onProfile = onProfile, onCatalog = onCatalog, onSearch = onSearch, onSettings = onSettings,
-                onServerChanged = { reload++ },
-            )
-        }
+        else -> Centered { Text("Загрузка…", style = MaterialTheme.typography.titleLarge, color = Dim) }
     }
 }
 
@@ -162,99 +130,15 @@ internal fun Centered(content: @Composable () -> Unit) {
     ) { content() }
 }
 
-/** Шапка: кнопки меню и поиска, справа — текущий сервер. Сам переключатель сервера — в меню. */
-@Composable
-private fun TopBar(device: Device?, focus: FocusMemory, menuButton: FocusRequester, onMenu: () -> Unit, onSearch: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().padding(start = Edge, end = Edge, top = 20.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        GlassButton(onClick = onMenu, modifier = Modifier.focusRequester(menuButton).restoresFocus(focus, "top:menu")) { Text("☰  Меню") }
-        GlassButton(onClick = onSearch, modifier = Modifier.restoresFocus(focus, "top:search")) { Text("Поиск") }
-        Spacer(Modifier.weight(1f))
-        device?.servers?.firstOrNull { it.selected == 1 }?.let {
-            Text("Сервер: ${it.label}", style = MaterialTheme.typography.titleSmall, color = Foreground, modifier = Modifier.glass().padding(horizontal = 20.dp, vertical = 10.dp))
-        }
-    }
-}
-
-/**
- * Боковое меню: профиль, каталог, поиск, выбор сервера и настройки. Сервер меняется
- * прямо здесь — открыть меню и нажать на нужный; остальные настройки на своём экране.
- */
-@Composable
-private fun Menu(
-    kinopub: Kinopub,
-    device: Device?,
-    onClose: () -> Unit,
-    onProfile: () -> Unit,
-    onCatalog: (CatalogQuery) -> Unit,
-    onSearch: () -> Unit,
-    onSettings: () -> Unit,
-    onServerChanged: () -> Unit,
-) {
-    val scope = rememberCoroutineScope()
-    SidePanel(left = true, onClose = onClose, width = 360.dp) {
-        PanelRow("Профиль") { onClose(); onProfile() }
-        PanelRow("Поиск") { onClose(); onSearch() }
-        MenuLabel("Каталог")
-        SECTIONS.forEachIndexed { index, (title, query) ->
-            PanelRow(title, focusFirst = index == 0) { onClose(); onCatalog(query) }
-        }
-        val servers = device?.servers.orEmpty()
-        if (servers.isNotEmpty()) {
-            MenuLabel("Сервер")
-            servers.forEach { server ->
-                PanelRow(server.label, marked = server.selected == 1) {
-                    onClose()
-                    if (server.selected != 1) scope.launch {
-                        // Сбой переключения оставляет прежний сервер: главный экран перечитает настройки.
-                        runCatching { withContext(Dispatchers.Default) { kinopub.setServer(device!!.id, server.id) } }
-                        onServerChanged()
-                    }
-                }
-            }
-            Text("", modifier = Modifier.padding(top = 8.dp))
-        }
-        PanelRow("Настройки") { onClose(); onSettings() }
-    }
-}
-
-@Composable
-private fun MenuLabel(text: String) {
-    Text(
-        text.uppercase(), color = Dim, style = MaterialTheme.typography.labelLarge,
-        modifier = Modifier.padding(start = Edge, end = Edge, top = 20.dp, bottom = 6.dp),
-    )
-}
-
-/**
- * Разделы каталога в меню и сортировка, с которой каждый открывается: фильмы и сериалы —
- * с новинок, мультфильмы (жанр, а не раздел сервиса) — по рейтингу. Остальные разделы
- * повторяют список типов сервиса (`v1/types`).
- */
-private val SECTIONS = listOf(
-    "Фильмы" to CatalogQuery(type = "movie", sort = "created-"),
-    "Сериалы" to CatalogQuery(type = "serial", sort = "created-"),
-    "Мультфильмы" to CatalogQuery(type = null, sort = "imdb_rating-", genre = Item.GENRE_CARTOON),
-    "4K" to CatalogQuery(type = "4k"),
-    "3D" to CatalogQuery(type = "3d"),
-    "Концерты" to CatalogQuery(type = "concert"),
-    "Док. фильмы" to CatalogQuery(type = "documovie"),
-    "Док. сериалы" to CatalogQuery(type = "docuserial"),
-    "ТВ шоу" to CatalogQuery(type = "tvshow"),
-)
-
 private class HomeRow(val title: String, val cards: List<ContinueCard>?, val items: List<Item>?)
 
 @Composable
-private fun Rows(home: HomeData, focus: FocusMemory, onOpen: (Int) -> Unit) {
+private fun Rows(home: HomeData, kidsName: String, focus: FocusMemory, onOpen: (Int) -> Unit) {
     // Пустые ряды не показываются; порядок — из docs/spec.md.
     val rows = listOf(
         HomeRow("Продолжить просмотр", home.continueAdults, null),
-        HomeRow("Нелли: продолжить", home.continueKids, null),
-        HomeRow("Нелли: избранное", null, home.kidsFavorites),
+        HomeRow("$kidsName: продолжить", home.continueKids, null),
+        HomeRow("$kidsName: избранное", null, home.kidsFavorites),
         HomeRow("Новинки: фильмы", null, home.freshMovies),
         HomeRow("Новинки: сериалы", null, home.freshSerials),
     ).filter { !(it.cards ?: it.items).isNullOrEmpty() }
@@ -264,7 +148,7 @@ private fun Rows(home: HomeData, focus: FocusMemory, onOpen: (Int) -> Unit) {
     // прямо во время прокрутки — на процессоре телевизора это давало рывки. Внутри ряда
     // по-прежнему существуют только видимые карточки.
     // По вертикали ряд в фокусе встаёт на одну и ту же высоту — заголовок ряда остаётся виден.
-    PivotScroll(RowPivot) { Column(Modifier.verticalScroll(rememberScrollState()).padding(top = 12.dp, bottom = 40.dp)) {
+    PivotScroll(RowPivot) { Column(Modifier.verticalScroll(rememberScrollState()).padding(top = 28.dp, bottom = 40.dp)) {
         rows.forEachIndexed { rowIndex, row ->
             key(row.title) { Column(Modifier.padding(bottom = 20.dp)) {
                 Text(

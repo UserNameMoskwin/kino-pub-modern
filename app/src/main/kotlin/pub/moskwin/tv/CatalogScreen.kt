@@ -180,10 +180,11 @@ internal fun CatalogScreen(
                 modifier = Modifier.padding(start = Edge, top = 12.dp, bottom = 4.dp),
             )
             LazyVerticalGrid(
-                columns = GridCells.Fixed(6),
+                // Пять обложек в ряд: столько помещается рядом с боковым меню.
+                columns = GridCells.Fixed(5),
                 state = grid,
-                contentPadding = PaddingValues(start = Edge, end = Edge, top = 12.dp, bottom = 40.dp),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                contentPadding = PaddingValues(start = Edge, end = 24.dp, top = 12.dp, bottom = 40.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
                 items(shown, key = { it.id }, contentType = { "poster" }) { item ->

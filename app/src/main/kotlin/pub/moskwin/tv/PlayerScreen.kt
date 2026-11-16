@@ -5,12 +5,15 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -34,7 +37,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -44,22 +49,27 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
-import androidx.media3.common.MimeTypes
+import androidx.media3.common.text.Cue
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.ForwardingAudioSink
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
+import androidx.media3.ui.SubtitleView
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import kotlinx.coroutines.CancellationException
@@ -73,6 +83,9 @@ import pub.moskwin.core.Device
 import pub.moskwin.core.Kinopub
 import pub.moskwin.core.MediaAudio
 import pub.moskwin.core.MediaLinks
+import pub.moskwin.core.SubtitleCue
+import pub.moskwin.core.fetchSubtitles
+import pub.moskwin.core.subtitleAt
 import pub.moskwin.core.Video
 import pub.moskwin.core.pickTracks
 
@@ -87,10 +100,47 @@ internal class PlaybackChoices(context: Context) {
     fun save(itemId: Int, audio: String?, subtitle: String) {
         prefs.edit().putString("a:$itemId", audio).putString("s:$itemId", subtitle).apply()
     }
+
+    // Сдвиги звука и субтитров — в десятых долях секунды, отдельно для каждой серии (фильма).
+    fun audioOffset(videoId: Int): Int = prefs.getInt("ao:$videoId", 0)
+    fun subtitleOffset(videoId: Int): Int = prefs.getInt("so:$videoId", 0)
+    fun saveOffsets(videoId: Int, audio: Int, subtitle: Int) {
+        prefs.edit().apply {
+            if (audio == 0) remove("ao:$videoId") else putInt("ao:$videoId", audio)
+            if (subtitle == 0) remove("so:$videoId") else putInt("so:$videoId", subtitle)
+        }.apply()
+    }
 }
 
+/** Сдвиг звука относительно видео; читается потоком воспроизведения. */
+private class AudioDelay {
+    @Volatile var us = 0L
+}
+
+/**
+ * Плеер не умеет сдвигать звук сам. Часы воспроизведения ведёт звуковой выход: видео
+ * показывает кадр, время которого на этих часах наступило. Если к показаниям часов
+ * прибавить сдвиг, видео уйдёт вперёд на эту величину — звук окажется позже картинки
+ * (при отрицательном сдвиге — раньше). Менять можно на ходу.
+ */
+@UnstableApi
+private class DelayedAudioFactory(context: Context, private val delay: AudioDelay) : DefaultRenderersFactory(context) {
+    override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink? {
+        val sink = super.buildAudioSink(context, enableFloatOutput, enableAudioTrackPlaybackParams) ?: return null
+        return object : ForwardingAudioSink(sink) {
+            override fun getCurrentPositionUs(sourceEnded: Boolean): Long {
+                val position = super.getCurrentPositionUs(sourceEnded)
+                return if (position == AudioSink.CURRENT_POSITION_NOT_SET) position else position + delay.us
+            }
+        }
+    }
+}
+
+/** Наибольший сдвиг в обе стороны: 10 секунд, шаг — 0,1 секунды. */
+private const val OFFSET_LIMIT = 100
+
 /** Что открыто поверх видео. */
-private enum class Panel { MENU, AUDIO, SUBTITLES, QUALITY, SPEED, SERVER, EXTERNAL }
+private enum class Panel { MENU, AUDIO, SUBTITLES, QUALITY, SPEED, SERVER, EXTERNAL, AUDIO_OFFSET, SUBTITLE_OFFSET }
 
 private val SPEEDS = listOf(0.75f, 1f, 1.25f, 1.5f, 2f)
 private const val CONTROLS_MS = 4_000L
@@ -100,9 +150,13 @@ private const val REPORT_MS = 30_000L
 private const val SEEK_MS = 15_000L
 
 /**
- * Плеер. Пульт: OK — пауза, влево/вправо — перемотка, вверх/вниз — панель выбора
- * (озвучка, субтитры, качество, скорость, сервер), «назад» — закрыть панель или выйти.
- * В панели выбор применяется сразу и панель закрывается; фокус стоит на текущем значении.
+ * Плеер. Пульт: OK — пауза, влево/вправо — перемотка, вниз — плашка с названием и
+ * временем (как на паузе), вверх — панель выбора (озвучка, субтитры, их сдвиги, качество,
+ * скорость, сервер), «назад» — закрыть панель или выйти. В панели выбор применяется сразу
+ * и панель закрывается; фокус стоит на текущем значении.
+ *
+ * Субтитры плеер рисует сам по файлу из API, а не через дорожку потока: так их можно
+ * сдвигать по времени и переключать без пересборки потока.
  */
 @OptIn(UnstableApi::class)
 @Composable
@@ -140,9 +194,16 @@ internal fun PlayerScreen(
     var reload by remember { mutableIntStateOf(0) }
     var askedExternal by remember { mutableStateOf(false) }
     var loadedVideo by remember { mutableIntStateOf(-1) }
+    // Сдвиги в десятых секунды: плюс — позже. Свои у каждой серии.
+    var audioOffset by remember { mutableIntStateOf(choices.audioOffset(request.video.id)) }
+    var subtitleOffset by remember { mutableIntStateOf(choices.subtitleOffset(request.video.id)) }
+    var cues by remember { mutableStateOf<List<SubtitleCue>>(emptyList()) }
+    var cueText by remember { mutableStateOf<String?>(null) }
+    var subtitleProblem by remember { mutableStateOf(false) }
+    val audioDelay = remember { AudioDelay().apply { us = audioOffset * 100_000L } }
 
     val player = remember {
-        ExoPlayer.Builder(context)
+        ExoPlayer.Builder(context, DelayedAudioFactory(context, audioDelay))
             .setLoadControl(
                 // «Небольшой буфер»: меньше памяти и быстрее старт ценой устойчивости к провалам сети.
                 if (settings.smallBuffer) DefaultLoadControl.Builder().setBufferDurationsMs(10_000, 20_000, 1_500, 3_000).build()
@@ -174,17 +235,8 @@ internal fun PlayerScreen(
         audioGroups.withIndex().firstOrNull { (i, g) -> audioIndexOf(g, i) == audio?.index }?.value?.let {
             builder.setOverrideForType(TrackSelectionOverride(it.mediaTrackGroup, 0))
         }
-        // Субтитры берутся из API (там известны язык и forced), у них id вида «api:N».
-        val textGroup = subtitle?.let { wanted ->
-            tracks.groups.firstOrNull { g ->
-                g.type == C.TRACK_TYPE_TEXT && g.getTrackFormat(0).id?.substringAfterLast("api:", "")?.toIntOrNull() == wanted
-            }
-        }
-        builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, textGroup == null)
-        // Обычно дорожка уже выбрана как дорожка по умолчанию; трогаем выбор, только если это не так.
-        if (textGroup != null && !textGroup.isSelected) {
-            builder.setOverrideForType(TrackSelectionOverride(textGroup.mediaTrackGroup, 0))
-        }
+        // Субтитры из потока не используются: их рисует сам экран по файлу из API.
+        builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
         // Качество: авто — адаптивно без ограничений, иначе не выше выбранной высоты.
         builder.clearOverridesOfType(C.TRACK_TYPE_VIDEO)
         if (quality > 0) builder.setMaxVideoSize(Int.MAX_VALUE, quality) else builder.clearVideoSizeConstraints()
@@ -214,6 +266,11 @@ internal fun PlayerScreen(
             // Та же серия заново (сменили сервер): позиция и выбранные дорожки сохраняются.
             // Новая серия: начинаем с её отметки, дорожки — по правилу или запомненному выбору.
             val sameVideo = loadedVideo == video.id && player.currentPosition > 0
+            if (loadedVideo != video.id) {
+                audioOffset = choices.audioOffset(video.id)
+                subtitleOffset = choices.subtitleOffset(video.id)
+                audioDelay.us = audioOffset * 100_000L
+            }
             loadedVideo = video.id
             val resumeAt = if (sameVideo) player.currentPosition
             else video.watching.takeIf { it.status == 0 && it.time > 30 && it.time < video.duration * 0.93 }?.let { (it.time * 1000).toLong() } ?: 0L
@@ -225,29 +282,13 @@ internal fun PlayerScreen(
                 audio = pick.audio
                 subtitle = pick.subtitle
             }
-            // К потоку подключается только выбранная дорожка субтитров, сразу и как дорожка
-            // по умолчанию. Если подключить все и включить нужную уже после старта, Media3 1.5
-            // падает с IllegalStateException в ProgressiveMediaPeriod, когда фильм идёт с начала.
-            // Заодно не тратится время на подготовку остальных файлов.
-            val chosen = subtitle?.let { i -> loaded.subtitles.getOrNull(i)?.let { s -> s.url?.let { Triple(i, s, it) } } }
-            val item = MediaItem.Builder().setUri(url).setSubtitleConfigurations(
-                listOfNotNull(
-                    chosen?.let { (i, s, address) ->
-                        MediaItem.SubtitleConfiguration.Builder(Uri.parse(address))
-                            .setMimeType(MimeTypes.APPLICATION_SUBRIP).setLanguage(s.lang).setId("api:$i")
-                            .setSelectionFlags(C.SELECTION_FLAG_DEFAULT).build()
-                    },
-                ),
-            ).build()
-            // Субтитры из самого плейлиста не используются, поэтому без выбранной дорожки текст выключен.
             player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
-                .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, chosen == null)
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
                 .build()
             tracks = Tracks.EMPTY
             // Играть начинаем после выбора дорожек, чтобы не прозвучала не та озвучка.
             player.playWhenReady = false
-            player.setMediaItem(item, resumeAt)
+            player.setMediaItem(MediaItem.fromUri(url), resumeAt)
             player.prepare()
             showControls()
         } catch (e: CancellationException) {
@@ -318,6 +359,37 @@ internal fun PlayerScreen(
         }
     }
     LaunchedEffect(panel) { if (panel == null) runCatching { root.requestFocus() } }
+
+    // Файл выбранных субтитров; смена дорожки поток не трогает.
+    LaunchedEffect(links, subtitle) {
+        cues = emptyList()
+        cueText = null
+        subtitleProblem = false
+        val address = subtitle?.let { links?.subtitles?.getOrNull(it)?.url } ?: return@LaunchedEffect
+        try {
+            cues = fetchSubtitles(address)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            subtitleProblem = true
+        }
+    }
+    // Какая реплика сейчас на экране. Состояние меняется только при смене реплики.
+    LaunchedEffect(cues) {
+        if (cues.isEmpty()) return@LaunchedEffect
+        while (true) {
+            val text = subtitleAt(cues, player.currentPosition - subtitleOffset * 100L)
+            if (text != cueText) cueText = text
+            delay(80)
+        }
+    }
+
+    fun setOffsets(audioTenths: Int, subtitleTenths: Int) {
+        audioOffset = audioTenths.coerceIn(-OFFSET_LIMIT, OFFSET_LIMIT)
+        subtitleOffset = subtitleTenths.coerceIn(-OFFSET_LIMIT, OFFSET_LIMIT)
+        audioDelay.us = audioOffset * 100_000L
+        choices.saveOffsets(video.id, audioOffset, subtitleOffset)
+    }
     // Шаг назад в панели: из списка — в меню, из меню — к видео, ничего не меняя.
     val panelBack = { panel = if (panel == Panel.MENU || panel == Panel.EXTERNAL) null else Panel.MENU }
     BackHandler(enabled = panel != null) { panelBack() }
@@ -336,6 +408,13 @@ internal fun PlayerScreen(
             .background(Color.Black)
             .focusRequester(root)
             .focusable()
+            // «Назад» при открытой панели ловится здесь, до элементов панели: иначе система
+            // тратит нажатие на перевод фокуса с элемента панели на сам экран, и панель остаётся.
+            .onPreviewKeyEvent { event ->
+                if (panel == null || (event.key != Key.Back && event.key != Key.Escape)) return@onPreviewKeyEvent false
+                if (event.type == KeyEventType.KeyUp) panelBack()
+                true
+            }
             .onKeyEvent { event ->
                 if (panel != null || event.type != KeyEventType.KeyDown) return@onKeyEvent false
                 when (event.key) {
@@ -349,7 +428,12 @@ internal fun PlayerScreen(
                     Key.MediaPause -> { player.pause(); showControls(); true }
                     Key.DirectionRight, Key.MediaFastForward -> { seekBy(true); true }
                     Key.DirectionLeft, Key.MediaRewind -> { seekBy(false); true }
-                    Key.DirectionUp, Key.DirectionDown, Key.Menu -> { panel = Panel.MENU; true }
+                    Key.DirectionUp, Key.Menu -> { panel = Panel.MENU; true }
+                    // Вниз — плашка как на паузе; второе нажатие убирает её.
+                    Key.DirectionDown -> {
+                        if (System.currentTimeMillis() < controlsUntil) controlsUntil = 0 else showControls()
+                        true
+                    }
                     else -> false
                 }
             },
@@ -362,22 +446,32 @@ internal fun PlayerScreen(
                     setKeepContentOnPlayerReset(true)
                     isFocusable = false
                     this.player = player
-                    subtitleView?.apply {
-                        if (settings.systemCaptionStyle) {
-                            setUserDefaultStyle()
-                            setUserDefaultTextSize()
-                        } else {
-                            setStyle(
-                                CaptionStyleCompat(
-                                    android.graphics.Color.WHITE, android.graphics.Color.TRANSPARENT,
-                                    android.graphics.Color.TRANSPARENT, CaptionStyleCompat.EDGE_TYPE_OUTLINE,
-                                    android.graphics.Color.BLACK, null,
-                                ),
-                            )
-                            setFractionalTextSize(0.055f)
-                        }
+                }
+            },
+            modifier = Modifier.fillMaxSize(),
+        )
+        // Субтитры: реплика читается внутри update, поэтому её смена не пересобирает экран.
+        AndroidView(
+            factory = { ctx ->
+                SubtitleView(ctx).apply {
+                    isFocusable = false
+                    if (settings.systemCaptionStyle) {
+                        setUserDefaultStyle()
+                        setUserDefaultTextSize()
+                    } else {
+                        setStyle(
+                            CaptionStyleCompat(
+                                android.graphics.Color.WHITE, android.graphics.Color.TRANSPARENT,
+                                android.graphics.Color.TRANSPARENT, CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+                                android.graphics.Color.BLACK, null,
+                            ),
+                        )
+                        setFractionalTextSize(0.055f)
                     }
                 }
+            },
+            update = { subtitles ->
+                subtitles.setCues(cueText?.let { listOf(Cue.Builder().setText(it).build()) } ?: emptyList())
             },
             modifier = Modifier.fillMaxSize(),
         )
@@ -385,7 +479,8 @@ internal fun PlayerScreen(
         val serverLabel = device?.servers?.firstOrNull { it.selected == 1 }?.label
         val height = player.videoFormat?.height
         val qualityLabel = height?.let { "${it}p" + if (quality == 0) " (авто)" else "" } ?: ""
-        val subtitleLabel = subtitle?.let { links?.subtitles?.getOrNull(it)?.title } ?: "выключены"
+        val subtitleLabel = subtitle?.let { links?.subtitles?.getOrNull(it)?.title }
+            ?.let { if (subtitleProblem) "$it (не загрузились)" else it } ?: "выключены"
 
         if (error != null) {
             Centered {
@@ -420,16 +515,38 @@ internal fun PlayerScreen(
                     .padding(horizontal = 28.dp, vertical = 18.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(
-                    details.item.name + (season()?.let { "  ·  сезон $it, серия ${video.number}" } ?: ""),
-                    style = MaterialTheme.typography.titleLarge,
-                )
+                // Название, для сериала — название серии и серым её номер: s01e15.
+                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Text(
+                        details.item.name, style = MaterialTheme.typography.titleLarge,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false).alignByBaseline(),
+                    )
+                    season()?.let { number ->
+                        if (video.title.isNotBlank()) Text(
+                            video.title, style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false).alignByBaseline(),
+                        )
+                        Text(
+                            "s%02de%02d".format(number, video.number), color = Dim,
+                            style = MaterialTheme.typography.titleMedium, modifier = Modifier.alignByBaseline(),
+                        )
+                    }
+                }
                 Box(Modifier.fillMaxWidth().height(5.dp).background(Color(0x55FFFFFF))) {
                     val fraction = if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f
                     Box(Modifier.fillMaxHeight().fillMaxWidth(fraction).background(Accent))
                 }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text((if (playing) "" else "❚❚  ") + "${clock(position)} / ${clock(duration)}", style = MaterialTheme.typography.bodyLarge)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    // Значок нарисован, а не набран символом: у символов из запасного шрифта
+                    // другая высота строки, и при смене значка плашка подпрыгивала.
+                    PlayIcon(playing)
+                    Text(
+                        "${clock(position)} / ${clock(duration)}", style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.padding(start = 12.dp),
+                    )
+                    Spacer(Modifier.weight(1f))
                     Text(
                         listOfNotNull(serverLabel, qualityLabel.ifEmpty { null }, audio?.title, "субтитры: $subtitleLabel", if (speed != 1f) "${speed}×" else null)
                             .joinToString("  ·  "),
@@ -439,13 +556,20 @@ internal fun PlayerScreen(
             }
         }
 
-        panel?.let { open ->
+        when (panel) {
+            Panel.AUDIO_OFFSET -> OffsetPlate("Сдвиг звука", "звук", audioOffset) { setOffsets(it, subtitleOffset) }
+            Panel.SUBTITLE_OFFSET -> OffsetPlate("Сдвиг субтитров", "субтитры", subtitleOffset) { setOffsets(audioOffset, it) }
+            else -> {}
+        }
+        panel?.takeIf { it != Panel.AUDIO_OFFSET && it != Panel.SUBTITLE_OFFSET }?.let { open ->
             val close = { panel = null }
             PanelBox(onBack = panelBack) {
                 when (open) {
                     Panel.MENU -> {
                         PanelItem("Озвучка", audio?.title ?: "—", first = true) { panel = Panel.AUDIO }
                         PanelItem("Субтитры", subtitleLabel) { panel = Panel.SUBTITLES }
+                        PanelItem("Сдвиг звука", offsetLabel(audioOffset)) { panel = Panel.AUDIO_OFFSET }
+                        PanelItem("Сдвиг субтитров", offsetLabel(subtitleOffset)) { panel = Panel.SUBTITLE_OFFSET }
                         PanelItem("Качество", if (quality == 0) "Авто (лучшее)" else "${quality}p") { panel = Panel.QUALITY }
                         PanelItem("Скорость", "${speed}×") { panel = Panel.SPEED }
                         PanelItem("Сервер", serverLabel ?: "—") { panel = Panel.SERVER }
@@ -461,10 +585,7 @@ internal fun PlayerScreen(
                         }
                         links?.subtitles?.forEachIndexed { i, s ->
                             if (s.url != null) PanelItem(s.title, null, first = subtitle == i, marked = subtitle == i) {
-                                // Другая дорожка — другой файл в потоке: поток собирается заново с той же секунды.
-                                val changed = subtitle != i
                                 subtitle = i; rememberChoice(); close()
-                                if (changed) reload++
                             }
                         }
                     }
@@ -521,6 +642,7 @@ internal fun PlayerScreen(
                             onExit()
                         }
                     }
+                    Panel.AUDIO_OFFSET, Panel.SUBTITLE_OFFSET -> {}
                 }
             }
         }
@@ -555,6 +677,67 @@ private fun PanelItem(title: String, value: String?, first: Boolean = false, mar
         modifier = if (first) Modifier.focusRequester(focus) else Modifier,
         onClick = onClick,
     )
+}
+
+/** Значок состояния в плашке: треугольник — идёт, две полоски — пауза. Размер не меняется. */
+@Composable
+private fun PlayIcon(playing: Boolean) {
+    Canvas(Modifier.size(16.dp)) {
+        if (playing) {
+            drawPath(
+                Path().apply { moveTo(size.width * 0.12f, 0f); lineTo(size.width, size.height / 2); lineTo(size.width * 0.12f, size.height); close() },
+                Foreground,
+            )
+        } else {
+            val bar = size.width * 0.3f
+            drawRect(Foreground, Offset(size.width * 0.1f, 0f), Size(bar, size.height))
+            drawRect(Foreground, Offset(size.width * 0.9f - bar, 0f), Size(bar, size.height))
+        }
+    }
+}
+
+private fun offsetLabel(tenths: Int): String = if (tenths == 0) "нет" else "%+.1f с".format(tenths / 10f)
+
+/**
+ * Настройка сдвига поверх идущего видео: влево и вправо меняют на 0,1 с (удержание
+ * повторяет), OK сбрасывает в ноль, «назад» возвращает в меню. Меняется сразу.
+ */
+@Composable
+private fun OffsetPlate(title: String, what: String, tenths: Int, onChange: (Int) -> Unit) {
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    Box(Modifier.fillMaxSize().padding(top = 28.dp), contentAlignment = Alignment.TopCenter) {
+        Column(
+            Modifier
+                .glassPanel()
+                .focusRequester(focus)
+                .focusable()
+                .onKeyEvent { event ->
+                    if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                    when (event.key) {
+                        Key.DirectionLeft -> { onChange(tenths - 1); true }
+                        Key.DirectionRight -> { onChange(tenths + 1); true }
+                        Key.DirectionCenter, Key.Enter -> { onChange(0); true }
+                        Key.DirectionUp, Key.DirectionDown -> true
+                        else -> false
+                    }
+                }
+                .padding(horizontal = 40.dp, vertical = 18.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(title, color = Dim, style = MaterialTheme.typography.titleSmall)
+            Text(
+                when {
+                    tenths == 0 -> "0 с"
+                    tenths > 0 -> "%+.1f с — $what позже".format(tenths / 10f)
+                    else -> "%+.1f с — $what раньше".format(tenths / 10f)
+                },
+                style = MaterialTheme.typography.headlineSmall,
+            )
+            Text("◀ раньше   ·   позже ▶   ·   OK — сбросить   ·   Назад — готово", color = Dim, style = MaterialTheme.typography.bodySmall)
+        }
+    }
 }
 
 private fun clock(ms: Long): String {

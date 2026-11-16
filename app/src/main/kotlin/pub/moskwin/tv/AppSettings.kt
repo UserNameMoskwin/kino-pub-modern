@@ -23,12 +23,18 @@ class AppSettings(context: Context) {
     /** Убирает аниме из новинок. */
     var hideAnime by flag("hide_anime", false)
 
-    // Плеер. Сам плеер — шаг 4; он будет читать эти значения.
+    // Режим ребёнка: детские ряды на главной, кнопка «Для <имя>», дубляж без субтитров в детском.
+    var kidsMode by flag("kids_mode", true)
+    var kidsName by text("kids_name", "Нелли")
+
+    /** Имя ребёнка, если режим включён; иначе null. */
+    val kidsNameOrNull: String? get() = kidsName.trim().takeIf { kidsMode && it.isNotEmpty() }
+
+    // Плеер
     /** `best`, `1080`, `720` или `480`. */
     var quality by text("quality", QUALITIES.first().first)
     var askPlayer by flag("ask_player", false)
     var smallBuffer by flag("small_buffer", false)
-    var autoFrameRate by flag("auto_frame_rate", false)
     var preferAc3 by flag("prefer_ac3", false)
     var autoNext by flag("auto_next", true)
     var okPauses by flag("ok_pauses", true)

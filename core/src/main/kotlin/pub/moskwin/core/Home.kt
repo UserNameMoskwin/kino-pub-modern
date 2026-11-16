@@ -35,24 +35,28 @@ data class HomeData(
     }
 }
 
-/** Папка закладок с детским. В спецификации она «Нелли», в аккаунте сейчас — «мутики». */
+/** Папка закладок с детским. В спецификации она названа по имени ребёнка, в аккаунте сейчас — «мутики». */
 val KIDS_FOLDER_TITLES = setOf("нелли", "мутики")
 
-/** Название папки, которую приложение создаёт само, если детской ещё нет. */
+/** Имя ребёнка по умолчанию: им подписаны детские ряды и названа папка, которую приложение создаёт само. */
 const val KIDS_FOLDER_NEW = "Нелли"
 
-suspend fun kidsFolder(api: Kinopub): BookmarkFolder? =
-    api.bookmarkFolders().firstOrNull { it.title.trim().lowercase() in KIDS_FOLDER_TITLES }
+/** Детская папка: с именем ребёнка [name] или одним из прежних названий. */
+private fun isKidsFolder(title: String, name: String): Boolean =
+    title.trim().lowercase().let { it == name.trim().lowercase() || it in KIDS_FOLDER_TITLES }
+
+suspend fun kidsFolder(api: Kinopub, name: String = KIDS_FOLDER_NEW): BookmarkFolder? =
+    api.bookmarkFolders().firstOrNull { isKidsFolder(it.title, name) }
 
 /** Лежит ли фильм или сериал в детской папке. */
-suspend fun isInKidsFolder(api: Kinopub, itemId: Int): Boolean =
-    api.itemFolders(itemId).any { it.title.trim().lowercase() in KIDS_FOLDER_TITLES }
+suspend fun isInKidsFolder(api: Kinopub, itemId: Int, name: String = KIDS_FOLDER_NEW): Boolean =
+    api.itemFolders(itemId).any { isKidsFolder(it.title, name) }
 
-/** Кнопка «Для Нелли»: кладёт в детскую папку или убирает из неё. Папка создаётся при первом добавлении. */
-suspend fun setInKidsFolder(api: Kinopub, itemId: Int, inFolder: Boolean) {
-    val folder = kidsFolder(api)
+/** Кнопка «Для <имя>»: кладёт в детскую папку или убирает из неё. Папка создаётся при первом добавлении. */
+suspend fun setInKidsFolder(api: Kinopub, itemId: Int, inFolder: Boolean, name: String = KIDS_FOLDER_NEW) {
+    val folder = kidsFolder(api, name)
     when {
-        inFolder -> api.addBookmark(itemId, (folder ?: api.createFolder(KIDS_FOLDER_NEW)).id)
+        inFolder -> api.addBookmark(itemId, (folder ?: api.createFolder(name.trim().ifEmpty { KIDS_FOLDER_NEW })).id)
         folder != null -> api.removeBookmark(itemId, folder.id)
     }
 }
@@ -117,18 +121,27 @@ fun rankFresh(items: List<Item>, isKids: (Item) -> Boolean): List<Item> =
 
 /**
  * Собирает главный экран. [notKids] — исключения «Не детское», хранятся в приложении.
- * Второстепенные запросы (устройство, отметки серий) при сбое пропускаются.
+ * [kidsName] — имя ребёнка; null — режим ребёнка выключен: детских рядов нет, всё начатое
+ * идёт в общий ряд «Продолжить». Второстепенные запросы (устройство, отметки серий) при
+ * сбое пропускаются.
  */
-suspend fun loadHome(api: Kinopub, notKids: Set<Int>, hideAnime: Boolean = false): HomeData = coroutineScope {
+suspend fun loadHome(
+    api: Kinopub,
+    notKids: Set<Int>,
+    hideAnime: Boolean = false,
+    kidsName: String? = KIDS_FOLDER_NEW,
+): HomeData = coroutineScope {
     val history = (1..HISTORY_PAGES).map { async { api.history(it) } }
     val movies = (1..FRESH_PAGES).map { async { api.fresh("movie", it) } }
     val serials = (1..FRESH_PAGES).map { async { api.fresh("serial", it) } }
     val device = async { runCatching { api.device() }.getOrNull() }
 
-    val folder = api.bookmarkFolders().firstOrNull { it.title.trim().lowercase() in KIDS_FOLDER_TITLES }
+    val folder = kidsName?.let { name -> api.bookmarkFolders().firstOrNull { isKidsFolder(it.title, name) } }
     val favorites = folder?.let { api.bookmarkItems(it.id) }.orEmpty()
     val folderIds = favorites.map { it.id }.toSet()
-    val kids = { item: Item -> isKids(item.isCartoon, item.isAnime, item.id in folderIds, item.id in notKids) }
+    val kids = { item: Item ->
+        kidsName != null && isKids(item.isCartoon, item.isAnime, item.id in folderIds, item.id in notKids)
+    }
 
     val (kidsEntries, adultEntries) = latestPerItem(history.awaitAll().flatten()).partition { kids(it.item) }
     val limit = Semaphore(4)

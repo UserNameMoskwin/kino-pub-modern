@@ -35,6 +35,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalFocusManager
@@ -128,8 +129,9 @@ internal fun SettingsScreen(
     }
     BackHandler(enabled = dialog != null) { dialog = null }
 
+    // [available] = false — пункт не работает на этом устройстве или не сделан: он серый и фокус не берёт.
     @Composable
-    fun row(key: String, title: String, value: String? = null, checked: Boolean? = null, onClick: () -> Unit) {
+    fun row(key: String, title: String, value: String? = null, checked: Boolean? = null, available: Boolean = true, onClick: () -> Unit) {
         val requester = remember(key) { FocusRequester().also { rowFocus[key] = it } }
         if (key == "name" && firstFocus) {
             LaunchedEffect(Unit) {
@@ -139,15 +141,24 @@ internal fun SettingsScreen(
         }
         SettingRow(
             title, value, checked,
-            enabled = dialog == null,
+            enabled = dialog == null && available,
+            dimmed = !available,
             modifier = Modifier.focusRequester(requester).onFocusChanged { if (it.isFocused) lastRow = key },
             onClick = onClick,
         )
     }
 
     Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = 28.dp)) {
-            Text("Настройки", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(horizontal = Edge))
+        Column(Modifier.fillMaxSize()) {
+        // Заголовок и строка состояния не прокручиваются: итог действия виден, где бы ни стоял фокус.
+        Row(Modifier.fillMaxWidth().padding(start = Edge, end = Edge, top = 28.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Настройки", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                status.orEmpty(), color = Dim, style = MaterialTheme.typography.bodyMedium, maxLines = 2,
+                modifier = Modifier.weight(1f).padding(start = 24.dp),
+            )
+        }
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 28.dp)) {
 
             Header("Настройки устройства")
             row("name", "Название устройства", settings.deviceName) {
@@ -194,6 +205,23 @@ internal fun SettingsScreen(
                 onChanged()
             }
 
+            Header("Режим ребёнка")
+            row(
+                "kids", "Режим ребёнка",
+                if (settings.kidsMode) "Детские ряды на главной и кнопка «Для ${settings.kidsName}»; мультфильмы идут в дубляже без субтитров"
+                else "Выключен: детских рядов и кнопок нет",
+                checked = settings.kidsMode,
+            ) {
+                settings.kidsMode = !settings.kidsMode
+                onChanged()
+            }
+            row("kids-name", "Имя ребёнка", settings.kidsName, available = settings.kidsMode) {
+                dialog = Dialog.Input("Имя ребёнка", settings.kidsName) { name ->
+                    settings.kidsName = name
+                    onChanged()
+                }
+            }
+
             Header("Настройки плеера")
             row("player", "Выбор плеера", if (settings.askPlayer) "Спрашивать при запуске" else "Встроенный") {
                 dialog = Dialog.Choice(
@@ -211,7 +239,7 @@ internal fun SettingsScreen(
                 }
             }
             row("buffer", "Небольшой буфер (для слабых устройств)", checked = settings.smallBuffer) { settings.smallBuffer = !settings.smallBuffer }
-            row("afr", "Автофреймрейт", checked = settings.autoFrameRate) { settings.autoFrameRate = !settings.autoFrameRate }
+            row("afr", "Автофреймрейт", "Не сделано", available = false) {}
             row("ac3", "Автовыбор ac3 аудиодорожки", checked = settings.preferAc3) { settings.preferAc3 = !settings.preferAc3 }
             row("next", "Автозапуск следующей серии", checked = settings.autoNext) { settings.autoNext = !settings.autoNext }
             row("ok", "Стоп/старт по OK", checked = settings.okPauses) { settings.okPauses = !settings.okPauses }
@@ -219,9 +247,14 @@ internal fun SettingsScreen(
             row("captions", "Настройка вида субтитров системой", checked = settings.systemCaptionStyle) {
                 settings.systemCaptionStyle = !settings.systemCaptionStyle
             }
-            row("captions-system", "Открыть системные настройки субтитров") {
-                runCatching { context.startActivity(Intent(Settings.ACTION_CAPTIONING_SETTINGS)) }
-                    .onFailure { status = "На этом телевизоре системных настроек субтитров нет" }
+            val captionSettings = remember { Intent(Settings.ACTION_CAPTIONING_SETTINGS) }
+            val hasCaptionSettings = remember { captionSettings.resolveActivity(context.packageManager) != null }
+            row(
+                "captions-system", "Открыть системные настройки субтитров",
+                if (hasCaptionSettings) null else "На этом телевизоре их нет", available = hasCaptionSettings,
+            ) {
+                runCatching { context.startActivity(captionSettings) }
+                    .onFailure { status = "Системные настройки субтитров не открылись" }
             }
 
             Header("О приложении")
@@ -234,9 +267,7 @@ internal fun SettingsScreen(
             }
             row("id", "ID устройства", loaded?.id?.toString() ?: "…") {}
 
-            status?.let {
-                Text(it, color = Dim, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = Edge, vertical = 16.dp))
-            }
+        }
         }
 
         dialog?.let { DialogPanel(it, onClose = { dialog = null }) }
@@ -259,6 +290,7 @@ internal fun SettingRow(
     checked: Boolean?,
     enabled: Boolean,
     modifier: Modifier = Modifier,
+    dimmed: Boolean = false,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -275,7 +307,7 @@ internal fun SettingRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(title, style = MaterialTheme.typography.titleMedium, color = if (dimmed) Color(0xFF6A6A6A) else Foreground)
             if (value != null) Text(value, color = Dim, style = MaterialTheme.typography.bodyMedium)
         }
         if (checked != null) {
@@ -291,7 +323,10 @@ private fun DialogPanel(dialog: Dialog, onClose: () -> Unit) {
     LaunchedEffect(dialog) { runCatching { first.requestFocus() } }
     Box(Modifier.fillMaxSize().background(Color(0xB3000000)), contentAlignment = Alignment.Center) {
         Column(
-            Modifier.width(520.dp).glassPanel().padding(vertical = 20.dp),
+            Modifier.width(520.dp).glassPanel()
+                // Стрелки вбок не уводят фокус из окна в боковое меню.
+                .onKeyEvent { it.key == Key.DirectionLeft || it.key == Key.DirectionRight }
+                .padding(vertical = 20.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             when (dialog) {

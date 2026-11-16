@@ -157,9 +157,9 @@ internal fun SearchScreen(kinopub: Kinopub, memory: SearchMemory, onOpen: (Int) 
             Text(status, color = Dim, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = Edge))
         }
         LazyVerticalGrid(
-            columns = GridCells.Adaptive(132.dp),
-            contentPadding = PaddingValues(start = Edge, end = Edge, top = 12.dp, bottom = 40.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            columns = GridCells.Fixed(5),
+            contentPadding = PaddingValues(start = Edge, end = 24.dp, top = 12.dp, bottom = 40.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             items(results.orEmpty(), key = { it.id }) { item ->
