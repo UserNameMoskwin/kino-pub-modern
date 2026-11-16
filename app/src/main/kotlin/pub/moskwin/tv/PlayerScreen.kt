@@ -7,6 +7,7 @@ import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -215,7 +216,18 @@ internal fun PlayerScreen(
     }
 
     fun season(): Int? = details.seasons.firstOrNull { video in it.episodes }?.number
-    fun showControls() { controlsUntil = System.currentTimeMillis() + CONTROLS_MS }
+    // Кнопки плашки: предыдущая серия, пауза, следующая. Выбранная кнопка — [barButton];
+    // null — плашка только показывает, а влево и вправо перематывают. У фильма серий нет,
+    // поэтому кнопок и их выбора тоже нет.
+    var barButton by remember { mutableStateOf<Int?>(null) }
+    // Пока в плашке выбирают кнопку, она держится дольше: успеть дойти до нужной.
+    fun showControls() { controlsUntil = System.currentTimeMillis() + if (barButton != null) BAR_CONTROLS_MS else CONTROLS_MS }
+    fun neighbour(step: Int): Video? = details.allVideos.let { all -> all.getOrNull(all.indexOf(video) + step) }
+    fun barShown() = System.currentTimeMillis() < controlsUntil || !player.isPlaying
+    fun closeBar() {
+        barButton = null
+        controlsUntil = 0
+    }
 
     /** Отметка на сервере, где остановились. Не зависит от жизни экрана: вызывается и при выходе. */
     fun report(seconds: Long, of: Video = video, inSeason: Int? = season()) {
@@ -394,6 +406,15 @@ internal fun PlayerScreen(
     val panelBack = { panel = if (panel == Panel.MENU || panel == Panel.EXTERNAL) null else Panel.MENU }
     BackHandler(enabled = panel != null) { panelBack() }
 
+    /** Переход на соседнюю серию из плашки: место в текущей запоминается на сервере. */
+    fun switchTo(target: Video?) {
+        if (target == null) return
+        report(player.currentPosition / 1000)
+        video = target
+        barButton = BAR_PLAY
+        showControls()
+    }
+
     fun seekBy(forward: Boolean) {
         // Удержание кнопки повторяет нажатия, поэтому отдельного ускорения нет.
         val target = (player.currentPosition + if (forward) SEEK_MS else -SEEK_MS).coerceIn(0, duration.coerceAtLeast(0))
@@ -411,12 +432,40 @@ internal fun PlayerScreen(
             // «Назад» при открытой панели ловится здесь, до элементов панели: иначе система
             // тратит нажатие на перевод фокуса с элемента панели на сам экран, и панель остаётся.
             .onPreviewKeyEvent { event ->
-                if (panel == null || (event.key != Key.Back && event.key != Key.Escape)) return@onPreviewKeyEvent false
-                if (event.type == KeyEventType.KeyUp) panelBack()
+                if (event.key != Key.Back && event.key != Key.Escape) return@onPreviewKeyEvent false
+                // «Назад» сначала закрывает панель, потом плашку с кнопками и только потом плеер.
+                val closesBar = panel == null && barButton != null && barShown()
+                if (panel == null && !closesBar) return@onPreviewKeyEvent false
+                if (event.type == KeyEventType.KeyUp) { if (panel != null) panelBack() else closeBar() }
                 true
             }
             .onKeyEvent { event ->
                 if (panel != null || event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                // Плашка погасла сама — выбор кнопки сбрасывается, стрелки снова перематывают.
+                if (barButton != null && !barShown()) barButton = null
+                val chosen = barButton
+                if (chosen != null) {
+                    when (event.key) {
+                        Key.DirectionLeft, Key.DirectionRight -> {
+                            val step = if (event.key == Key.DirectionRight) 1 else -1
+                            val target = chosen + step
+                            // Кнопки без соседней серии нет — на неё выбор не переходит.
+                            if (target in BAR_PREVIOUS..BAR_NEXT && (target == BAR_PLAY || neighbour(target - BAR_PLAY) != null)) barButton = target
+                            showControls()
+                            return@onKeyEvent true
+                        }
+                        Key.DirectionCenter, Key.Enter -> {
+                            when (chosen) {
+                                BAR_PREVIOUS -> switchTo(neighbour(-1))
+                                BAR_NEXT -> switchTo(neighbour(1))
+                                else -> if (player.isPlaying) player.pause() else player.play()
+                            }
+                            showControls()
+                            return@onKeyEvent true
+                        }
+                        else -> {}
+                    }
+                }
                 when (event.key) {
                     Key.DirectionCenter, Key.Enter, Key.MediaPlayPause -> {
                         if (settings.okPauses || event.key == Key.MediaPlayPause) {
@@ -429,9 +478,15 @@ internal fun PlayerScreen(
                     Key.DirectionRight, Key.MediaFastForward -> { seekBy(true); true }
                     Key.DirectionLeft, Key.MediaRewind -> { seekBy(false); true }
                     Key.DirectionUp, Key.Menu -> { panel = Panel.MENU; true }
-                    // Вниз — плашка как на паузе; второе нажатие убирает её.
+                    // Вниз — плашка как на паузе, у сериала с выбором кнопок; второе нажатие убирает её.
                     Key.DirectionDown -> {
-                        if (System.currentTimeMillis() < controlsUntil) controlsUntil = 0 else showControls()
+                        // У сериала плашка, которая и так видна (после перемотки, на паузе), от «вниз»
+                        // не гаснет, а даёт выбрать кнопку.
+                        val hide = if (details.isSerial) barButton != null else System.currentTimeMillis() < controlsUntil
+                        if (hide) closeBar() else {
+                            if (details.isSerial) barButton = BAR_PLAY
+                            showControls()
+                        }
                         true
                     }
                     else -> false
@@ -515,24 +570,19 @@ internal fun PlayerScreen(
                     .padding(horizontal = 28.dp, vertical = 18.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                // Название, для сериала — название серии и серым её номер: s01e15.
+                // «Сериал: Серия» и тем же шрифтом, но серым, номер серии: s01e15. У фильма — только название.
+                val episode = season()
                 Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     Text(
-                        details.item.name, style = MaterialTheme.typography.titleLarge,
+                        if (episode != null && video.title.isNotBlank()) "${details.item.name}: ${video.title.substringBefore(" / ")}" else details.item.name,
+                        style = MaterialTheme.typography.titleLarge,
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false).alignByBaseline(),
                     )
-                    season()?.let { number ->
-                        if (video.title.isNotBlank()) Text(
-                            video.title, style = MaterialTheme.typography.titleMedium,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false).alignByBaseline(),
-                        )
-                        Text(
-                            "s%02de%02d".format(number, video.number), color = Dim,
-                            style = MaterialTheme.typography.titleMedium, modifier = Modifier.alignByBaseline(),
-                        )
-                    }
+                    if (episode != null) Text(
+                        "s%02de%02d".format(episode, video.number), color = Dim,
+                        style = MaterialTheme.typography.titleLarge, modifier = Modifier.alignByBaseline(),
+                    )
                 }
                 Box(Modifier.fillMaxWidth().height(5.dp).background(Color(0x55FFFFFF))) {
                     val fraction = if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f
@@ -541,14 +591,19 @@ internal fun PlayerScreen(
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     // Значок нарисован, а не набран символом: у символов из запасного шрифта
                     // другая высота строки, и при смене значка плашка подпрыгивала.
-                    PlayIcon(playing)
+                    // У сериала рядом с паузой — предыдущая и следующая серия; выбранная кнопка залита.
+                    val picked = barButton
+                    if (details.isSerial) BarButton(picked == BAR_PREVIOUS, enabled = neighbour(-1) != null) { SkipIcon(forward = false, it) }
+                    // Кнопка показывает действие: пока идёт — пауза, на паузе — пуск.
+                    BarButton(picked == BAR_PLAY, enabled = true) { PlayIcon(!playing, it) }
+                    if (details.isSerial) BarButton(picked == BAR_NEXT, enabled = neighbour(1) != null) { SkipIcon(forward = true, it) }
                     Text(
                         "${clock(position)} / ${clock(duration)}", style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.padding(start = 12.dp),
+                        modifier = Modifier.padding(start = 10.dp),
                     )
                     Spacer(Modifier.weight(1f))
                     Text(
-                        listOfNotNull(serverLabel, qualityLabel.ifEmpty { null }, audio?.title, "субтитры: $subtitleLabel", if (speed != 1f) "${speed}×" else null)
+                        listOfNotNull(serverLabel, qualityLabel.ifEmpty { null }, audio?.title, "Субтитры: $subtitleLabel", if (speed != 1f) "${speed}×" else null)
                             .joinToString("  ·  "),
                         color = Dim, style = MaterialTheme.typography.bodyMedium,
                     )
@@ -679,21 +734,47 @@ private fun PanelItem(title: String, value: String?, first: Boolean = false, mar
     )
 }
 
-/** Значок состояния в плашке: треугольник — идёт, две полоски — пауза. Размер не меняется. */
+/** Значок кнопки в плашке: треугольник — пуск, две полоски — пауза. Размер не меняется. */
 @Composable
-private fun PlayIcon(playing: Boolean) {
+private fun PlayIcon(playing: Boolean, color: Color) {
     Canvas(Modifier.size(16.dp)) {
         if (playing) {
             drawPath(
                 Path().apply { moveTo(size.width * 0.12f, 0f); lineTo(size.width, size.height / 2); lineTo(size.width * 0.12f, size.height); close() },
-                Foreground,
+                color,
             )
         } else {
             val bar = size.width * 0.3f
-            drawRect(Foreground, Offset(size.width * 0.1f, 0f), Size(bar, size.height))
-            drawRect(Foreground, Offset(size.width * 0.9f - bar, 0f), Size(bar, size.height))
+            drawRect(color, Offset(size.width * 0.1f, 0f), Size(bar, size.height))
+            drawRect(color, Offset(size.width * 0.9f - bar, 0f), Size(bar, size.height))
         }
     }
+}
+
+/** Значок перехода к соседней серии: треугольник и черта у края, куда он смотрит. */
+@Composable
+private fun SkipIcon(forward: Boolean, color: Color) {
+    Canvas(Modifier.size(16.dp)) {
+        val bar = size.width * 0.16f
+        val tip = if (forward) size.width - bar else bar
+        val back = if (forward) 0f else size.width
+        drawPath(Path().apply { moveTo(back, 0f); lineTo(tip, size.height / 2); lineTo(back, size.height); close() }, color)
+        drawRect(color, Offset(if (forward) size.width - bar else 0f, 0f), Size(bar, size.height))
+    }
+}
+
+private const val BAR_CONTROLS_MS = 8_000L
+private const val BAR_PREVIOUS = 0
+private const val BAR_PLAY = 1
+private const val BAR_NEXT = 2
+
+/** Кнопка плашки: круг, залитый светлым, когда она выбрана. [enabled] = false — соседней серии нет. */
+@Composable
+private fun BarButton(picked: Boolean, enabled: Boolean, icon: @Composable (Color) -> Unit) {
+    Box(
+        Modifier.padding(end = 6.dp).size(36.dp).background(if (picked) FocusFill else Color.Transparent, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) { icon(if (picked) OnFocus else if (enabled) Foreground else Color(0x55FFFFFF)) }
 }
 
 private fun offsetLabel(tenths: Int): String = if (tenths == 0) "нет" else "%+.1f с".format(tenths / 10f)

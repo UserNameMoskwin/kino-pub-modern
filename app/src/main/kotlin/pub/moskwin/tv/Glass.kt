@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -46,8 +47,8 @@ internal val RowShape = RoundedCornerShape(18.dp)
 private val GlassFill = Brush.verticalGradient(listOf(Color(0x2EFFFFFF), Color(0x12FFFFFF)))
 private val GlassEdge = Brush.verticalGradient(listOf(Color(0x73FFFFFF), Color(0x14FFFFFF)))
 private val PanelFill = Brush.verticalGradient(listOf(Color(0xE0262630), Color(0xE0121218)))
-private val FocusFill = Color(0xEBFFFFFF)
-private val OnFocus = Color(0xFF101014)
+internal val FocusFill = Color(0xEBFFFFFF)
+internal val OnFocus = Color(0xFF101014)
 
 /** Стеклянная поверхность: кнопка не в фокусе, плашка, поле ввода. */
 internal fun Modifier.glass(shape: Shape = CircleShape): Modifier =
@@ -79,7 +80,7 @@ internal fun Modifier.glassBackdrop(): Modifier = drawBehind {
 }
 
 /**
- * Кнопка-капсула. В фокусе заливается светлым, но не увеличивается: увеличение размывало
+ * Кнопка-капсула одной высоты для любого содержимого. В фокусе заливается светлым, но не увеличивается: увеличение размывало
  * текст и наезжало на соседние кнопки. [selected] — текущее значение (выбранный сезон).
  */
 @Composable
@@ -102,7 +103,10 @@ internal fun GlassButton(
                     else -> Modifier.glass()
                 },
             )
-            .padding(horizontal = 22.dp, vertical = 11.dp),
+            // Высота задана, а не складывается из содержимого: кнопки с текстом, со значком и
+            // с символом из запасного шрифта получаются одного роста и стоят на одной линии.
+            .height(46.dp)
+            .padding(horizontal = 22.dp),
         contentAlignment = Alignment.Center,
     ) {
         CompositionLocalProvider(

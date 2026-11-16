@@ -163,7 +163,7 @@ private fun Rows(home: HomeData, kidsName: String, focus: FocusMemory, onOpen: (
                                 image = item.posters.wide ?: item.posters.big,
                                 width = 256.dp, height = 144.dp,
                                 title = item.name,
-                                subtitle = if (card.season > 0) "Сезон ${card.season} · серия ${card.episode}"
+                                subtitle = if (card.season > 0) "Сезон ${card.season} · Серия ${card.episode}"
                                 else item.year?.toString().orEmpty(),
                                 progress = card.progress,
                                 modifier = Modifier.restoresFocus(focus, "${row.title}:${item.id}", rowIndex == 0 && index == 0),

@@ -163,7 +163,10 @@ private fun Loaded(
                 }
             }
 
-            Row(Modifier.padding(horizontal = Edge, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                Modifier.padding(horizontal = Edge, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
+            ) {
                 GlassButton(onClick = { play(resume) }, modifier = Modifier.focusRequester(playFocus)) {
                     Text(playLabel(details, resume))
                 }

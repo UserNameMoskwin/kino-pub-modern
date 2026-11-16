@@ -4,6 +4,7 @@ import android.content.Intent
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -160,6 +161,7 @@ internal fun SettingsScreen(
         }
         SettingRow(
             title, value, checked,
+            hint = HINTS[key] ?: if (key.startsWith("toggle:")) toggleHint(title) else null,
             enabled = dialog == null && available,
             dimmed = !available,
             mark = mark,
@@ -235,7 +237,7 @@ internal fun SettingsScreen(
             }
 
             Header("Настройки интерфейса")
-            row("anime", "Отключение аниме", if (settings.hideAnime) "Да — аниме не попадает в новинки" else "Нет") {
+            row("anime", "Отключение аниме", checked = settings.hideAnime) {
                 settings.hideAnime = !settings.hideAnime
                 onChanged()
             }
@@ -243,8 +245,6 @@ internal fun SettingsScreen(
             Header("Режим ребёнка")
             row(
                 "kids", "Режим ребёнка",
-                if (settings.kidsMode) "Детский ряд на главной, раздел «${settings.kidsName}» в меню и детская кнопка в карточке; мультфильмы идут в дубляже без субтитров"
-                else "Выключен: детских рядов и кнопок нет",
                 checked = settings.kidsMode,
             ) {
                 settings.kidsMode = !settings.kidsMode
@@ -316,6 +316,55 @@ internal fun SettingsScreen(
     }
 }
 
+/** Что делает каждая настройка — мелкой строкой под её названием. Ключи — как у строк экрана. */
+private val HINTS = mapOf(
+    "update-new" to "Список изменений и установка новой версии",
+    "name" to "Под этим именем телевизор виден в списке устройств на сайте kino.pub",
+    "speed" to "Замеряет скорость загрузки с выбранного видеосервера",
+    "server" to "Откуда идёт видео. Если оно тормозит, попробуйте другой сервер",
+    "anime" to "Убирает аниме из рядов новинок на главном экране",
+    "kids" to "Детский ряд на главной, раздел ребёнка в меню и детская кнопка в карточке; мультфильмы идут в дубляже без субтитров",
+    "kids-name" to "Так называются детский ряд, раздел в меню и папка закладок в аккаунте",
+    "player" to "Чем открывать видео: встроенным плеером или каждый раз выбирать приложение",
+    "quality" to "Потолок качества. «Лучшее» — максимум, который позволяет сеть",
+    "stream" to "Способ передачи видео. Менять стоит, только если видео не запускается",
+    "buffer" to "Меньше памяти и быстрее старт, но видео чаще останавливается при слабой сети",
+    "afr" to "Подстройка частоты кадров телевизора под фильм",
+    "ac3" to "Выбирать дорожку AC3, если она есть: нужна ресиверу или саундбару с объёмным звуком",
+    "next" to "Когда серия кончается, сразу включается следующая",
+    "ok" to "Кнопка OK в плеере ставит на паузу и снимает с неё",
+    "stats" to "Поверх видео: разрешение, кодек, скорость потока и запас буфера",
+    "captions" to "Цвет и размер субтитров берутся из настроек телевизора, а не из приложения",
+    "captions-system" to "Настройки телевизора, в которых задаётся вид субтитров",
+    "update" to "Сравнивает установленную версию с последней выпущенной",
+    "posters" to "Освобождает место на телевизоре; обложки потом загрузятся заново",
+    "id" to "Номер этого телевизора в вашем аккаунте kino.pub",
+)
+
+/** Пояснение к переключателю устройства: их список и названия приходят с сервиса. */
+private fun toggleHint(label: String): String? = label.lowercase().let {
+    when {
+        "ssl" in it -> "Шифровать соединение с видеосервером"
+        "hevc" in it -> "Разрешить кодек HEVC: то же качество при меньшем потоке, если телевизор его поддерживает"
+        "hdr" in it -> "Показывать версии с HDR, когда они есть"
+        "4k" in it -> "Показывать версии в 4K, когда они есть"
+        "плейлист" in it -> "Отдавать в одном плейлисте потоки с разными кодеками"
+        else -> null
+    }
+}
+
+/** Переключатель: стеклянная дорожка с бегунком, включённый — красный. Нарисован, а не набран символом. */
+@Composable
+private fun Switch(on: Boolean) {
+    Box(
+        Modifier.size(width = 46.dp, height = 26.dp)
+            .background(if (on) Accent else Color(0x29FFFFFF), CircleShape)
+            .border(1.dp, if (on) Color.Transparent else Color(0x52FFFFFF), CircleShape)
+            .padding(3.dp),
+        contentAlignment = if (on) Alignment.CenterEnd else Alignment.CenterStart,
+    ) { Box(Modifier.size(20.dp).background(if (on) Color.White else Color(0xFFB4B4BE), CircleShape)) }
+}
+
 @Composable
 private fun Header(title: String) {
     Text(
@@ -334,6 +383,7 @@ internal fun SettingRow(
     modifier: Modifier = Modifier,
     dimmed: Boolean = false,
     mark: Boolean = false,
+    hint: String? = null,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -354,10 +404,10 @@ internal fun SettingRow(
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleMedium, color = if (dimmed) Color(0xFF6A6A6A) else Foreground)
             if (value != null) Text(value, color = Dim, style = MaterialTheme.typography.bodyMedium)
+            // Пояснение, что делает настройка: мельче и тусклее значения.
+            if (hint != null) Text(hint, color = Color(0xFF7E7E86), style = MaterialTheme.typography.bodySmall)
         }
-        if (checked != null) {
-            Text(if (checked) "☑" else "☐", style = MaterialTheme.typography.headlineSmall, color = if (checked) Foreground else Dim)
-        }
+        if (checked != null) Switch(checked)
     }
 }
 
