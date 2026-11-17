@@ -1,0 +1,48 @@
+---
+---
+// Тёмная страница в цветах тёмной темы GitHub поверх jekyll-theme-primer.
+@import "{{ site.theme }}";
+
+$bg: #0d1117;
+$bg-muted: #151b23;
+$border: #3d444d;
+$text: #f0f6fc;
+$text-muted: #9198a1;
+$link: #4493f8;
+
+:root { color-scheme: dark; }
+
+html, body { background-color: $bg; color: $text; }
+
+.markdown-body {
+  color: $text;
+
+  a { color: $link; }
+  h1, h2 { border-bottom-color: $border; }
+  h6 { color: $text-muted; }
+  hr { background-color: $border; }
+  img { background-color: transparent; }
+
+  blockquote { color: $text-muted; border-left-color: $border; }
+
+  table {
+    th, td { border-color: $border; }
+    tr { background-color: $bg; border-top-color: $border; }
+    tr:nth-child(2n) { background-color: $bg-muted; }
+  }
+
+  code, tt { background-color: rgba(101, 108, 118, 0.2); }
+  pre, .highlight pre { background-color: $bg-muted; }
+  pre code { background-color: transparent; }
+
+  kbd {
+    color: $text;
+    background-color: $bg-muted;
+    border-color: $border;
+    box-shadow: inset 0 -1px 0 $border;
+  }
+}
+
+// Подвал темы.
+.footer { color: $text-muted !important; border-top-color: $border !important; }
+.footer a { color: $link; }

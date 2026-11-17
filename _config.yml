@@ -4,6 +4,7 @@ title: KinoPub для Android TV
 description: Приложение для просмотра kino.pub на Android TV и Google TV
 lang: ru
 theme: jekyll-theme-primer
+# Тёмные цвета поверх темы — assets/css/style.scss.
 exclude:
   - source
   - device
